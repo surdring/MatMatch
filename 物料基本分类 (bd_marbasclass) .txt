@@ -1,0 +1,33 @@
+物料基本分类 (bd_marbasclass) 
+     
+
+序号 编码 名称 字段编码 字段类型 类型 引用模型 枚举 
+1   averagecost  平均成本  averagecost decimal(28,8)  UFDouble      
+2   averagemmahead  平均生产提前期  averagemmahead int  Integer      
+3   averagepurahead  平均采购提前期  averagepurahead int  Integer      
+4   avgprice  平均单价  avgprice decimal(28,8)  UFDouble      
+5   code  物料基本分类编码  code varchar(40)  String      
+6   creationtime  创建时间  creationtime char(19)  UFDateTime      
+7   creator  创建人  creator varchar(20)  用户  用户    
+8   dataoriginflag  分布式  dataoriginflag int  数据来源   0=本级产生，1=上级下发，2=下级上报，3=本级产生已上报下发，-1=系统预置，    
+9   def1  自定义项1  def1 varchar(101)  自定义项      
+10   def10  自定义项10  def10 varchar(101)  自定义项      
+11   def2  自定义项2  def2 varchar(101)  自定义项      
+12   def3  自定义项3  def3 varchar(101)  自定义项      
+13   def4  自定义项4  def4 varchar(101)  自定义项      
+14   def5  自定义项5  def5 varchar(101)  自定义项      
+15   def6  自定义项6  def6 varchar(101)  自定义项      
+16   def7  自定义项7  def7 varchar(101)  自定义项      
+17   def8  自定义项8  def8 varchar(101)  自定义项      
+18   def9  自定义项9  def9 varchar(101)  自定义项      
+19   enablestate  启用状态  enablestate int  启用状态   1=未启用，2=已启用，3=已停用，    
+20   innercode  内部码  innercode varchar(200)  String      
+21   modifiedtime  最后修改时间  modifiedtime char(19)  UFDateTime      
+22   modifier  最后修改人  modifier varchar(20)  用户  用户    
+23   name  物料基本分类名称  name varchar(200)  多语文本      
+24   pk_group  所属集团  pk_group (20)  集团  集团    
+25   pk_marasstframe  辅助属性结构  pk_marasstframe varchar(20)  辅助属性结构  辅助属性结构    
+26   pk_marbasclass  物料基本分类主键  pk_marbasclass char(20)  UFID      
+27   pk_org  所属组织  pk_org (20)  组织  业务单元    
+28   pk_parent  上级物料分类  pk_parent varchar(20)  物料基本分类  物料基本分类    
+  

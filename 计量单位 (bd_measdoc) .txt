@@ -1,0 +1,19 @@
+计量单位 (bd_measdoc) 
+
+序号 编码 名称 字段编码 字段类型 类型 引用模型 枚举 
+1   basecodeflag  是否基本单位  basecodeflag char(1)  UFBoolean      
+2   bitnumber  小数位数  bitnumber int  换算小数位数枚举   0=0，1=1，2=2，3=3，4=4，5=5，6=6，7=7，8=8，    
+3   code  计量单位编码  code varchar(40)  String      
+4   creationtime  创建时间  creationtime char(19)  UFDateTime      
+5   creator  创建人  creator varchar(20)  用户  用户    
+6   dataoriginflag  分布式  dataoriginflag int  数据来源   0=本级产生，1=上级下发，2=下级上报，3=本级产生已上报下发，-1=系统预置，    
+7   ename  英文名称  ename varchar(200)  String      
+8   modifiedtime  最后修改时间  modifiedtime char(19)  UFDateTime      
+9   modifier  最后修改人  modifier varchar(20)  用户  用户    
+10   name  计量单位名称  name varchar(200)  多语文本      
+11   oppdimen  所属量纲  oppdimen char(1)  量纲   W=重量，L=长度，A=面积，V=体积，P=件数，T=时间，E=其他，    
+12   pk_group  所属集团  pk_group varchar(20)  集团  集团    
+13   pk_measdoc  计量单位主键  pk_measdoc char(20)  UFID      
+14   pk_org  所属组织  pk_org (20)  组织  业务单元    
+15   scalefactor  换算系数  scalefactor decimal(20,8)  UFDouble      
+  

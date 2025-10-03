@@ -1,0 +1,278 @@
+{
+  "1.1": {
+    "id": "1.1",
+    "title": "PostgreSQL数据库设计与实现",
+    "phase": "Phase 1",
+    "priority": "P0",
+    "estimated_days": 3,
+    "assignee": "后端开发",
+    "dependencies": [],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "1.2": {
+    "id": "1.2",
+    "title": "Oracle数据源适配器实现",
+    "phase": "Phase 1",
+    "priority": "P0",
+    "estimated_days": 2,
+    "assignee": "后端开发",
+    "dependencies": [],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "1.3": {
+    "id": "1.3",
+    "title": "ETL数据管道实现",
+    "phase": "Phase 1",
+    "priority": "P0",
+    "estimated_days": 4,
+    "assignee": "后端开发",
+    "dependencies": [
+      "1.1",
+      "1.2"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "2.1": {
+    "id": "2.1",
+    "title": "通用物料处理器实现",
+    "phase": "Phase 2",
+    "priority": "P0",
+    "estimated_days": 5,
+    "assignee": "算法开发",
+    "dependencies": [
+      "1.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "2.2": {
+    "id": "2.2",
+    "title": "相似度计算算法实现",
+    "phase": "Phase 2",
+    "priority": "P0",
+    "estimated_days": 4,
+    "assignee": "算法开发",
+    "dependencies": [
+      "2.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "2.3": {
+    "id": "2.3",
+    "title": "规则和词典管理系统",
+    "phase": "Phase 2",
+    "priority": "P1",
+    "estimated_days": 3,
+    "assignee": "后端开发",
+    "dependencies": [
+      "2.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "3.1": {
+    "id": "3.1",
+    "title": "FastAPI核心服务框架",
+    "phase": "Phase 3",
+    "priority": "P0",
+    "estimated_days": 2,
+    "assignee": "后端开发",
+    "dependencies": [
+      "1.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "3.2": {
+    "id": "3.2",
+    "title": "批量查重API实现",
+    "phase": "Phase 3",
+    "priority": "P0",
+    "estimated_days": 4,
+    "assignee": "后端开发",
+    "dependencies": [
+      "2.1",
+      "2.2",
+      "3.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "3.3": {
+    "id": "3.3",
+    "title": "单条查重API实现",
+    "phase": "Phase 3",
+    "priority": "P0",
+    "estimated_days": 2,
+    "assignee": "后端开发",
+    "dependencies": [
+      "2.1",
+      "2.2",
+      "3.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "3.4": {
+    "id": "3.4",
+    "title": "管理后台API实现",
+    "phase": "Phase 3",
+    "priority": "P1",
+    "estimated_days": 3,
+    "assignee": "后端开发",
+    "dependencies": [
+      "2.3",
+      "3.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "4.1": {
+    "id": "4.1",
+    "title": "Vue.js项目框架搭建",
+    "phase": "Phase 4",
+    "priority": "P0",
+    "estimated_days": 2,
+    "assignee": "前端开发",
+    "dependencies": [],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "4.2": {
+    "id": "4.2",
+    "title": "物料查重界面实现",
+    "phase": "Phase 4",
+    "priority": "P0",
+    "estimated_days": 4,
+    "assignee": "前端开发",
+    "dependencies": [
+      "4.1",
+      "3.2",
+      "3.3"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "4.3": {
+    "id": "4.3",
+    "title": "管理后台界面实现",
+    "phase": "Phase 4",
+    "priority": "P1",
+    "estimated_days": 4,
+    "assignee": "前端开发",
+    "dependencies": [
+      "4.1",
+      "3.4"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "4.4": {
+    "id": "4.4",
+    "title": "Pinia状态管理实现",
+    "phase": "Phase 4",
+    "priority": "P1",
+    "estimated_days": 2,
+    "assignee": "前端开发",
+    "dependencies": [
+      "4.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "5.1": {
+    "id": "5.1",
+    "title": "系统集成测试",
+    "phase": "Phase 5",
+    "priority": "P0",
+    "estimated_days": 3,
+    "assignee": "测试工程师",
+    "dependencies": [
+      "4.2",
+      "4.3"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "5.2": {
+    "id": "5.2",
+    "title": "性能优化与调优",
+    "phase": "Phase 5",
+    "priority": "P1",
+    "estimated_days": 2,
+    "assignee": "后端开发",
+    "dependencies": [
+      "5.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  },
+  "5.3": {
+    "id": "5.3",
+    "title": "部署文档和用户手册",
+    "phase": "Phase 5",
+    "priority": "P1",
+    "estimated_days": 2,
+    "assignee": "技术文档",
+    "dependencies": [
+      "5.1"
+    ],
+    "status": "not_started",
+    "start_date": null,
+    "end_date": null,
+    "completion_percentage": 0,
+    "notes": ""
+  }
+}

@@ -1,0 +1,83 @@
+物料基本信息（多版本） (bd_material) 
+
+序号 编码 名称 字段编码 字段类型 类型 引用模型 枚举 
+1   code  物料编码  code varchar(40)  String      
+2   creationtime  创建时间  creationtime char(19)  UFDateTime      
+3   creator  创建人  creator varchar(20)  用户  用户    
+4   dataoriginflag  分布式  dataoriginflag smallint  数据来源   0=本级产生，1=上级下发，2=下级上报，3=本级产生已上报下发，-1=系统预置，    
+5   def1  自定义项1  def1 varchar(101)  自定义项      
+6   def10  自定义项10  def10 varchar(101)  自定义项      
+7   def11  自定义项11  def11 varchar(101)  自定义项      
+8   def12  自定义项12  def12 varchar(101)  自定义项      
+9   def13  自定义项13  def13 varchar(101)  自定义项      
+10   def14  自定义项14  def14 varchar(101)  自定义项      
+11   def15  自定义项15  def15 varchar(101)  自定义项      
+12   def16  自定义项16  def16 varchar(101)  自定义项      
+13   def17  自定义项17  def17 varchar(101)  自定义项      
+14   def18  自定义项18  def18 varchar(101)  自定义项      
+15   def19  自定义项19  def19 varchar(101)  自定义项      
+16   def2  自定义项2  def2 varchar(101)  自定义项      
+17   def20  自定义项20  def20 varchar(101)  自定义项      
+18   def3  自定义项3  def3 varchar(101)  自定义项      
+19   def4  自定义项4  def4 varchar(101)  自定义项      
+20   def5  自定义项5  def5 varchar(101)  自定义项      
+21   def6  自定义项6  def6 varchar(101)  自定义项      
+22   def7  自定义项7  def7 varchar(101)  自定义项      
+23   def8  自定义项8  def8 varchar(101)  自定义项      
+24   def9  自定义项9  def9 varchar(101)  自定义项      
+25   deletestate  删除状态  deletestate int  删除状态   1=删除中，2=删除失败，    
+26   delperson  删除人  delperson varchar(20)  用户  用户    
+27   deltime  删除时间  deltime char(19)  UFDateTime      
+28   discountflag  价格折扣  discountflag char(1)  UFBoolean      
+29   electronicsale  电子销售  electronicsale char(1)  UFBoolean      
+30   ematerialspec  英文规格  ematerialspec varchar(400)  String      
+31   enablestate  启用状态  enablestate int  启用状态   1=未启用，2=已启用，3=已停用，    
+32   ename  英语名称  ename varchar(200)  String      
+33   featureclass  特征类  featureclass varchar(20)  特征类  特征类    
+34   fee  服务类  fee char(1)  UFBoolean      
+35   goodsprtname  海关商品打印名称  goodsprtname varchar(200)  String      
+36   graphid  图号  graphid varchar(50)  String      
+37   intolerance  入库容差（%）  intolerance decimal(20,4)  UFDouble      
+38   iselectrans  电子采购  iselectrans char(1)  UFBoolean      
+39   isfeature  特征件  isfeature char(1)  UFBoolean      
+40   ishproitems  助促销品  ishproitems char(1)  UFBoolean      
+41   latest  是否最新  latest char(1)  UFBoolean      
+42   materialbarcode  条形码  materialbarcode varchar(30)  String      
+46   materialmgt  实物物料管理模式  materialmgt smallint  实物物料管理模式   1=周转材料，2=设备，    
+47   materialmnecode  助记码  materialmnecode varchar(50)  String      
+52   materialshortname  物料简称  materialshortname varchar(200)  String      
+53   materialspec  规格  materialspec varchar(400)  String      
+56   materialtype  型号  materialtype varchar(400)  String      
+57   memo  备注  memo varchar(100)  备注      
+58   modifiedtime  最后修改时间  modifiedtime char(19)  UFDateTime      
+59   modifier  最后修改人  modifier varchar(20)  用户  用户    
+60   name  物料名称  name varchar(200)  多语文本      
+61   outcloselowerlimit  出库关闭下容差（%）  outcloselowerlimit decimal(20,4)  UFDouble      
+62   outtolerance  出库容差（%）  outtolerance decimal(20,4)  UFDouble      
+63   picture  图片  picture image  图片      
+64   pk_brand  品牌  pk_brand varchar(20)  品牌档案  品牌档案    
+65   pk_goodscode  海关商品代码  pk_goodscode varchar(20)  海关商品编码  海关商品编码    
+66   pk_group  所属集团  pk_group (20)  组织_集团  集团    
+67   pk_marasstframe  辅助属性结构  pk_marasstframe varchar(20)  辅助属性结构  辅助属性结构    
+68   pk_marbasclass  物料分类  pk_marbasclass (20)  物料基本分类  物料基本分类    
+69   pk_material  物料基本信息主键  pk_material char(20)  UFID      
+70   pk_material_pf  物料申请单  pk_material_pf varchar(20)  物料申请单      
+71   pk_mattaxes  物料税类  pk_mattaxes varchar(20)  物料税类  物料税类    
+72   pk_measdoc  主计量单位  pk_measdoc (20)  计量单位  计量单位    
+73   pk_org  所属组织  pk_org (20)  组织  业务单元    
+74   pk_prodline  产品线  pk_prodline varchar(20)  产品线  产品线    
+75   pk_source  原始版本  pk_source varchar(20)  物料基本信息  物料    
+76   prodarea  产地  prodarea varchar(20)  产地(自定义档案)  产地(自定义档案)    
+77   productfamily  产品簇  productfamily char(1)  UFBoolean      
+78   prolifeperiod  产品生命周期  prolifeperiod smallint  产品生命周期   0=试销期，1=成长期，2=成熟期，3=衰退期，    
+79   retail  适用零售  retail char(1)  UFBoolean      
+80   setpartsflag  成套件  setpartsflag char(1)  UFBoolean      
+81   storeunitnum  多少标准存储单位  storeunitnum decimal(20,8)  UFDouble      
+82   unitheight  高度  unitheight varchar(20)  String      
+83   unitlength  长度  unitlength varchar(20)  String      
+84   unitvolume  单位体积  unitvolume decimal(20,8)  UFDouble      
+85   unitweight  单位重量  unitweight decimal(20,8)  UFDouble      
+86   unitwidth  宽度  unitwidth varchar(20)  String      
+87   version  版本号  version int  Integer      
+  
+ 
