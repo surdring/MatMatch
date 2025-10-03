@@ -1,0 +1,106 @@
+[
+  {
+    "id": "size_spec_metric",
+    "name": "公制尺寸规格提取",
+    "category": "general",
+    "attribute": "size_specification",
+    "pattern": "(?:M|Φ|φ|DN|Ｍ|ＤＮ)?(\\d+(?:\\.\\d+)?[×*xX×＊ｘＸ]\\d+(?:\\.\\d+)?(?:[×*xX×＊ｘＸ]\\d+(?:\\.\\d+)?)?)",
+    "priority": 100,
+    "description": "基于20个真实尺寸样本，支持全角半角字符的公制尺寸规格提取",
+    "examples": [
+      "1*20",
+      "M20*1.5",
+      "M24*1",
+      "M22*1",
+      "M22*1.5"
+    ],
+    "data_source": "oracle_real_data",
+    "confidence": 0.95
+  },
+  {
+    "id": "thread_spec",
+    "name": "螺纹规格提取",
+    "category": "fastener",
+    "attribute": "thread_specification",
+    "pattern": "(M|Ｍ)(\\d+(?:\\.\\d+)?)[×*xX×＊ｘＸ](\\d+(?:\\.\\d+)?)",
+    "priority": 95,
+    "description": "提取螺纹规格如M20*1.5，支持全角半角字符",
+    "examples": [
+      "M20*1.5",
+      "M24*1",
+      "M22*1",
+      "M22*1.5",
+      "M16*1.5"
+    ],
+    "data_source": "oracle_real_data",
+    "confidence": 0.98
+  },
+  {
+    "id": "material_type",
+    "name": "材质类型提取",
+    "category": "general",
+    "attribute": "material_type",
+    "pattern": "(304|不锈钢|316L|430|201|碳钢|铜|316|铸铁|铝|合金钢)",
+    "priority": 90,
+    "description": "基于11种真实材质样本",
+    "examples": [
+      "304",
+      "不锈钢",
+      "316L",
+      "430",
+      "201"
+    ],
+    "data_source": "oracle_real_data",
+    "confidence": 0.92
+  },
+  {
+    "id": "brand_name",
+    "name": "品牌名称提取",
+    "category": "general",
+    "attribute": "brand_name",
+    "pattern": "\\b(DN50|DN25|DN100|PN16|DN80|DN150|DN200|DN40|DN65|DN20|DN32|DN125|Q235B|YJV|DN15|DN250|DN300|M16|M30|PN10)\\b",
+    "priority": 85,
+    "description": "基于20个真实品牌样本",
+    "examples": [
+      "DN50",
+      "DN25",
+      "DN100",
+      "PN16",
+      "DN80"
+    ],
+    "data_source": "oracle_real_data",
+    "confidence": 0.88
+  },
+  {
+    "id": "pressure_rating",
+    "name": "压力等级提取",
+    "category": "valve",
+    "attribute": "pressure_rating",
+    "pattern": "(PN\\d+|(?:\\d+(?:\\.\\d+)?(?:MPa|bar|公斤|kg)))",
+    "priority": 88,
+    "description": "提取压力等级如PN16, 1.6MPa",
+    "examples": [
+      "PN16",
+      "1.6MPa",
+      "10bar"
+    ],
+    "data_source": "pattern_analysis",
+    "confidence": 0.9
+  },
+  {
+    "id": "nominal_diameter",
+    "name": "公称直径提取",
+    "category": "pipe",
+    "attribute": "nominal_diameter",
+    "pattern": "(DN\\d+|Φ\\d+)",
+    "priority": 87,
+    "description": "提取公称直径如DN50, Φ100",
+    "examples": [
+      "DN50",
+      "DN100",
+      "Φ50"
+    ],
+    "data_source": "pattern_analysis",
+    "confidence": 0.95
+  }
+]
