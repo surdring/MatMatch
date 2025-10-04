@@ -87,20 +87,26 @@ def generate_rules_sql(rules_file: str) -> List[str]:
     sql_statements = []
     
     for rule in rules:
-        examples_array = "ARRAY[" + ", ".join([escape_sql_string(ex) for ex in rule.get('examples', [])]) + "]"
+        # 构建示例数组（如果有example_input和example_output，则使用它们）
+        examples = []
+        if rule.get('example_input') and rule.get('example_output'):
+            examples = [f"{rule['example_input']} -> {rule['example_output']}"]
+        examples_array = "ARRAY[" + ", ".join([escape_sql_string(ex) for ex in examples]) + "]"
         
-        sql = f"""INSERT INTO extraction_rules (rule_id, rule_name, material_category, attribute_name, regex_pattern, priority, confidence, description, examples, data_source, created_by) VALUES (
-    {escape_sql_string(rule['id'])},
-    {escape_sql_string(rule['name'])},
-    {escape_sql_string(rule['category'])},
-    {escape_sql_string(rule['attribute'])},
-    {escape_sql_string(rule['pattern'])},
+        # 符合Design.md - 不指定id，让数据库SERIAL自动生成
+        sql = f"""INSERT INTO extraction_rules (rule_name, material_category, attribute_name, regex_pattern, priority, confidence, is_active, version, description, example_input, example_output, created_by) VALUES (
+    {escape_sql_string(rule['rule_name'])},
+    {escape_sql_string(rule['material_category'])},
+    {escape_sql_string(rule['attribute_name'])},
+    {escape_sql_string(rule['regex_pattern'])},
     {rule['priority']},
     {rule['confidence']},
+    {str(rule.get('is_active', True)).upper()},
+    {rule.get('version', 1)},
     {escape_sql_string(rule.get('description', ''))},
-    {examples_array},
-    {escape_sql_string(rule.get('data_source', 'oracle_real_data'))},
-    'system'
+    {escape_sql_string(rule.get('example_input', ''))},
+    {escape_sql_string(rule.get('example_output', ''))},
+    {escape_sql_string(rule.get('created_by', 'system'))}
 );"""
         sql_statements.append(sql)
     
@@ -145,15 +151,28 @@ def generate_categories_sql(categories_file: str) -> List[str]:
     
     sql_statements = []
     
-    for category_name, info in categories.items():
-        keywords_array = "ARRAY[" + ", ".join([escape_sql_string(kw) for kw in info['keywords']]) + "]"
+    for category_name, keywords in categories.items():
+        # 如果keywords是字典格式（旧格式），则提取keywords字段
+        if isinstance(keywords, dict):
+            keywords_list = keywords.get('keywords', [])
+            detection_confidence = keywords.get('detection_confidence', 0.8)
+            category_type = keywords.get('category_type', 'general')
+            priority = keywords.get('priority', 50)
+        else:
+            # 新格式：直接是关键词列表
+            keywords_list = keywords
+            detection_confidence = 0.8
+            category_type = 'general'
+            priority = 50
+            
+        keywords_array = "ARRAY[" + ", ".join([escape_sql_string(kw) for kw in keywords_list]) + "]"
         
-        sql = f"""INSERT INTO material_categories (category_name, keywords, detection_confidence, category_type, priority, created_by) VALUES (
+        sql = f"""INSERT INTO knowledge_categories (category_name, keywords, detection_confidence, category_type, priority, created_by) VALUES (
     {escape_sql_string(category_name)},
     {keywords_array},
-    {info['detection_confidence']},
-    {escape_sql_string(info['category_type'])},
-    {info['priority']},
+    {detection_confidence},
+    {escape_sql_string(category_type)},
+    {priority},
     'system'
 );"""
         sql_statements.append(sql)
@@ -241,13 +260,13 @@ SET client_encoding = 'UTF8';
 -- 连接到matmatch数据库
 \\c matmatch;
 
--- 开始事务
-BEGIN;
+-- 注意: 请使用 psql --single-transaction 参数来确保原子性
+-- 如果需要手动事务，请取消下面的注释
+-- BEGIN;
 
--- 创建表结构（如果不存在）
+-- 创建表结构（如果不存在）- 符合Design.md定义
 CREATE TABLE IF NOT EXISTS extraction_rules (
     id SERIAL PRIMARY KEY,
-    rule_id VARCHAR(50) UNIQUE NOT NULL,
     rule_name VARCHAR(100) NOT NULL,
     material_category VARCHAR(100) NOT NULL,
     attribute_name VARCHAR(50) NOT NULL,
@@ -255,9 +274,10 @@ CREATE TABLE IF NOT EXISTS extraction_rules (
     priority INTEGER DEFAULT 100,
     confidence DECIMAL(3,2) DEFAULT 1.0,
     is_active BOOLEAN DEFAULT TRUE,
+    version INTEGER DEFAULT 1,
     description TEXT,
-    examples TEXT[],
-    data_source VARCHAR(50) DEFAULT 'oracle_real_data',
+    example_input TEXT,
+    example_output TEXT,
     created_by VARCHAR(50) DEFAULT 'system',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -277,7 +297,7 @@ CREATE TABLE IF NOT EXISTS synonyms (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS material_categories (
+CREATE TABLE IF NOT EXISTS knowledge_categories (
     id SERIAL PRIMARY KEY,
     category_name VARCHAR(200) NOT NULL,
     keywords TEXT[],
@@ -294,7 +314,7 @@ CREATE TABLE IF NOT EXISTS material_categories (
 -- 清空现有数据
 DELETE FROM extraction_rules WHERE created_by = 'system';
 DELETE FROM synonyms WHERE created_by = 'system';
-DELETE FROM material_categories WHERE created_by = 'system';
+DELETE FROM knowledge_categories WHERE created_by = 'system';
 
 -- ========================================
 -- 导入提取规则
@@ -335,12 +355,13 @@ DELETE FROM material_categories WHERE created_by = 'system';
 -- ========================================
 
 CREATE INDEX IF NOT EXISTS idx_extraction_rules_category ON extraction_rules (material_category, priority) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_extraction_rules_rule_id ON extraction_rules (rule_id) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_extraction_rules_name ON extraction_rules (rule_name) WHERE is_active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_synonyms_original ON synonyms (original_term) WHERE is_active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_synonyms_standard ON synonyms (standard_term) WHERE is_active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_synonyms_category_type ON synonyms (category, synonym_type) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_categories_name ON material_categories (category_name) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_categories_keywords ON material_categories USING gin (keywords) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_knowledge_category_name ON knowledge_categories (category_name);
+CREATE INDEX IF NOT EXISTS idx_knowledge_category_keywords_gin ON knowledge_categories USING gin (keywords);
+CREATE INDEX IF NOT EXISTS idx_knowledge_category_active ON knowledge_categories (is_active) WHERE is_active = TRUE;
 
 -- ========================================
 -- 验证导入结果
@@ -351,10 +372,10 @@ SELECT 'extraction_rules' as table_name, COUNT(*) as record_count FROM extractio
 UNION ALL
 SELECT 'synonyms' as table_name, COUNT(*) as record_count FROM synonyms WHERE is_active = TRUE
 UNION ALL
-SELECT 'material_categories' as table_name, COUNT(*) as record_count FROM material_categories WHERE is_active = TRUE;
+SELECT 'knowledge_categories' as table_name, COUNT(*) as record_count FROM knowledge_categories WHERE is_active = TRUE;
 
 -- 显示规则概览
-SELECT rule_id, rule_name, confidence, priority 
+SELECT id, rule_name, confidence, priority 
 FROM extraction_rules 
 WHERE is_active = TRUE 
 ORDER BY priority DESC;
@@ -368,26 +389,33 @@ ORDER BY count DESC;
 
 -- 显示类别关键词概览
 SELECT category_name, category_type, priority, array_length(keywords, 1) as keyword_count
-FROM material_categories 
+FROM knowledge_categories 
 WHERE is_active = TRUE 
 ORDER BY priority DESC 
 LIMIT 10;
 
--- 提交事务
-COMMIT;
+-- 提交事务（如果使用了BEGIN，请取消注释）
+-- COMMIT;
 
--- 显示成功消息
-\\echo '🎉 PostgreSQL规则和词典导入完成！'
-\\echo '📊 导入统计:'
-\\echo '  - 基于230,421条Oracle物料数据生成'
-\\echo '  - 提取规则: 6条 (置信度88%-98%)'
-\\echo '  - 同义词: 3,000+条'
-\\echo '  - 类别关键词: 1,000+个'
-\\echo ''
-\\echo '🧪 测试查询示例:'
-\\echo '  SELECT * FROM extraction_rules WHERE material_category = ''general'';'
-\\echo '  SELECT * FROM synonyms WHERE category = ''material'';'
-\\echo '  SELECT * FROM material_categories WHERE category_type = ''bearing'';'
+-- ========================================
+-- 🎉 导入完成！
+-- ========================================
+-- 
+-- 📊 导入统计:
+--   - 基于230,421条Oracle物料数据生成
+--   - 提取规则: 6条 (置信度88%-98%)
+--   - 同义词: 37,223条
+--   - 类别关键词: 14个
+-- 
+-- 🧪 验证数据:
+--   SELECT COUNT(*) FROM extraction_rules;
+--   SELECT COUNT(*) FROM synonyms;
+--   SELECT COUNT(*) FROM knowledge_categories;
+-- 
+-- 测试查询示例:
+--   SELECT * FROM extraction_rules WHERE material_category = 'general';
+--   SELECT * FROM synonyms LIMIT 10;
+--   SELECT * FROM knowledge_categories;
 """)
     
     logger.info(f"✅ SQL导入脚本已生成: {output_file}")
@@ -433,7 +461,7 @@ psql -h localhost -U matmatch -d matmatch
 # 3. 验证结果
 SELECT COUNT(*) FROM extraction_rules;
 SELECT COUNT(*) FROM synonyms;
-SELECT COUNT(*) FROM material_categories;
+SELECT COUNT(*) FROM knowledge_categories;
 ```
 
 ## 导入内容
@@ -467,7 +495,7 @@ SELECT COUNT(*) FROM material_categories;
 -- 检查记录数
 SELECT COUNT(*) FROM extraction_rules;    -- 应该显示 6
 SELECT COUNT(*) FROM synonyms;           -- 应该显示 {len(synonyms_sql)}
-SELECT COUNT(*) FROM material_categories; -- 应该显示 {len(categories_sql)}
+SELECT COUNT(*) FROM knowledge_categories; -- 应该显示 {len(categories_sql)}
 
 -- 测试规则
 SELECT rule_name, confidence FROM extraction_rules ORDER BY priority DESC;
@@ -476,7 +504,7 @@ SELECT rule_name, confidence FROM extraction_rules ORDER BY priority DESC;
 SELECT standard_term FROM synonyms WHERE original_term = '304';
 
 -- 测试类别
-SELECT category_name FROM material_categories WHERE '螺栓' = ANY(keywords);
+SELECT category_name FROM knowledge_categories WHERE '螺栓' = ANY(keywords);
 ```
 
 ## 故障排除

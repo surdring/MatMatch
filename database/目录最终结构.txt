@@ -1,0 +1,36 @@
+database/
+├── logs/                                    # 📂 日志目录
+│   └── material_knowledge_generation_*.log
+│
+├── 🔧 核心执行脚本
+│   ├── material_knowledge_generator.py      # ⭐ 统一核心模块
+│   ├── analyze_real_data.py                 # 数据分析
+│   ├── generate_sql_import_script.py        # SQL生成
+│   ├── import_to_postgresql.py              # Python导入
+│   └── test_generated_rules.py              # 规则测试
+│
+├── ⚙️ 配置和连接
+│   ├── oracle_config.py                     # Oracle配置
+│   └── oracledb_connector.py                # Oracle连接器
+│
+├── 🔍 诊断和测试工具（保留）
+│   ├── test_oracle_connection.py            # ✅ Oracle连接测试
+│   ├── test_postgresql_connection.py        # ✅ PostgreSQL连接测试
+│   ├── check_oracle_tables.py               # ✅ Oracle表结构检查
+│   └── check_material_fields.py             # ✅ 物料表字段检查
+│
+├── 🚀 快速导入工具（已更新）
+│   └── quick_import.bat                     # ⚠️ Windows批处理（已更新配置）
+│
+├── 📊 生成的数据文件（最新版本）
+│   ├── oracle_data_analysis_20251002_184248.json
+│   ├── standardized_extraction_rules_20251003_151842.json     # ⭐
+│   ├── standardized_synonym_dictionary_20251003_151842.json   # ⭐
+│   ├── standardized_category_keywords_20251003_151842.json    # ⭐
+│   ├── rules_documentation_20251003_151842.md                 # ⭐
+│   ├── postgresql_import_20251003_152137.sql                  # ⭐
+│   └── postgresql_import_usage_20251003_152137.md             # ⭐
+│
+└── 📄 文档
+    ├── README.md                            # 主要使用指南
+    └── requirements.txt                     # Python依赖

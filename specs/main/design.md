@@ -533,130 +533,307 @@ class FileProcessingService:
         )
 ```
 
-#### 2.2.3 Oracle数据源集成模块
+#### 2.2.3 轻量级Oracle连接适配器
 ```python
-class OracleDataSourceAdapter:
-    """Oracle数据源适配器 - 基于真实Oracle表结构"""
+class OracleConnectionAdapter:
+    """
+    轻量级Oracle连接适配器 - 基础设施层
     
-    def __init__(self, oracle_connector: OracleDBConnector, 
-                 material_processor: UniversalMaterialProcessor):
-        self.oracle = oracle_connector
-        self.processor = material_processor
-        
-        # Oracle表字段映射
-        self.field_mapping = {
-            'erp_code': 'code',
-            'material_name': 'name', 
-            'specification': 'materialspec',
-            'model': 'materialtype',
-            'category_id': 'pk_marbasclass',
-            'brand_id': 'pk_brand',
-            'unit_id': 'pk_measdoc',
-            'enable_state': 'enablestate',
-            'english_name': 'ename',
-            'english_spec': 'ematerialspec',
-            'short_name': 'materialshortname',
-            'mnemonic_code': 'materialmnecode',
-            'memo': 'memo',
-            'created_time': 'creationtime',
-            'modified_time': 'modifiedtime'
-        }
+    职责：
+    - 提供可复用的Oracle连接管理
+    - 支持连接重试和错误处理
+    - 提供查询缓存机制
+    - 支持异步查询包装
     
-    async def extract_materials_batch(self, batch_size: int = 1000) -> AsyncGenerator[List[Dict], None]:
+    不包含：
+    - ❌ 业务查询逻辑（由上层调用者提供）
+    - ❌ 字段映射逻辑
+    - ❌ 数据处理逻辑
+    """
+    
+    def __init__(self, config: OracleConfig):
+        self.config = config
+        self.connection = None
+        self.cache = QueryCache(max_size=1000, ttl=300)
+    
+    # ============ 连接管理 ============
+    @async_retry(max_attempts=3, delay=1.0, backoff=2.0)
+    async def connect(self) -> bool:
+        """建立Oracle连接（带自动重试）"""
+        try:
+            self.connection = await asyncio.to_thread(
+                oracledb.connect,
+                user=self.config.user,
+                password=self.config.password,
+                dsn=self.config.dsn
+            )
+            logger.info("✅ Oracle连接成功")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Oracle连接失败: {e}")
+            raise OracleConnectionError(str(e))
+    
+    async def disconnect(self) -> None:
+        """关闭连接"""
+        if self.connection:
+            await asyncio.to_thread(self.connection.close)
+            self.connection = None
+    
+    # ============ 查询执行 ============
+    async def execute_query(
+        self, 
+        query: str, 
+        params: Dict[str, Any] = None,
+        use_cache: bool = True
+    ) -> List[Dict[str, Any]]:
         """
-        从Oracle分批提取物料数据
+        执行查询（通用方法）
+        
+        ✅ 提供基础的查询执行能力
+        ❌ 不包含具体的业务查询逻辑
         
         Args:
-            batch_size: 每批处理数量
+            query: SQL查询语句（由调用者提供）
+            params: 查询参数
+            use_cache: 是否使用缓存
             
-        Yields:
-            批量物料数据
+        Returns:
+            查询结果列表
         """
-        if not self.oracle.connect():
-            raise Exception("Oracle数据库连接失败")
+        # 检查缓存
+        if use_cache:
+            cached_result = self.cache.get(query, params)
+            if cached_result is not None:
+                return cached_result
+        
+        # 执行查询
+        if not self.connection:
+            await self.connect()
+        
+        cursor = await asyncio.to_thread(self.connection.cursor)
         
         try:
-            # 基于真实Oracle表结构的查询
-            enhanced_query = """
-            SELECT 
-                m.code as erp_code,
-                m.name as material_name,
-                m.materialspec as specification,
-                m.materialtype as model,
-                m.pk_marbasclass as category_id,
-                c.name as category_name,
-                c.code as category_code,
-                m.pk_brand as brand_id,
-                m.pk_measdoc as unit_id,
-                u.name as unit_name,
-                u.ename as unit_english_name,
-                m.enablestate as enable_state,
-                m.ename as english_name,
-                m.ematerialspec as english_spec,
-                m.materialshortname as short_name,
-                m.materialmnecode as mnemonic_code,
-                m.memo as remark,
-                m.creationtime as created_time,
-                m.modifiedtime as modified_time,
-                m.pk_org as org_id
-            FROM bd_material m
-            LEFT JOIN bd_marbasclass c ON m.pk_marbasclass = c.pk_marbasclass
-            LEFT JOIN bd_measdoc u ON m.pk_measdoc = u.pk_measdoc
-            WHERE m.enablestate IN (1, 2)  -- 包含未启用和已启用的物料
-            ORDER BY m.code
-            """
+            if params:
+                await asyncio.to_thread(cursor.execute, query, params)
+            else:
+                await asyncio.to_thread(cursor.execute, query)
             
-            # 分批查询数据
-            results = self.oracle.execute_query_batch(enhanced_query, batch_size)
+            # 获取列名
+            columns = [desc[0] for desc in cursor.description]
             
-            # 分批yield数据
-            for i in range(0, len(results), batch_size):
-                batch = results[i:i+batch_size]
+            # 获取数据
+            rows = await asyncio.to_thread(cursor.fetchall)
+            
+            # 转换为字典列表
+            result = [dict(zip(columns, row)) for row in rows]
+            
+            # 缓存结果
+            if use_cache:
+                self.cache.set(query, params, result)
+            
+            return result
+            
+        finally:
+            await asyncio.to_thread(cursor.close)
+    
+    async def execute_query_generator(
+        self,
+        query: str,
+        params: Dict[str, Any] = None,
+        batch_size: int = 1000
+    ) -> AsyncGenerator[List[Dict[str, Any]], None]:
+        """
+        流式执行查询（用于大数据量）
+        
+        ✅ 提供流式查询能力
+        ❌ 不包含具体的业务查询逻辑
+        
+        Args:
+            query: SQL查询语句（由调用者提供）
+            params: 查询参数
+            batch_size: 每批数据量
+            
+        Yields:
+            批量查询结果
+        """
+        if not self.connection:
+            await self.connect()
+        
+        cursor = await asyncio.to_thread(self.connection.cursor)
+        
+        try:
+            if params:
+                await asyncio.to_thread(cursor.execute, query, params)
+            else:
+                await asyncio.to_thread(cursor.execute, query)
+            
+            columns = [desc[0] for desc in cursor.description]
+            
+            while True:
+                rows = await asyncio.to_thread(cursor.fetchmany, batch_size)
+                if not rows:
+                    break
+                
+                batch = [dict(zip(columns, row)) for row in rows]
                 yield batch
                 
         finally:
-            self.oracle.disconnect()
+            await asyncio.to_thread(cursor.close)
     
-    async def get_material_statistics(self) -> Dict[str, Any]:
-        """获取物料数据统计信息"""
-        from oracle_config import ExtractionQueries
-        
-        if not self.oracle.connect():
-            raise Exception("Oracle数据库连接失败")
-        
-        try:
-            # 获取总数统计
-            count_result = self.oracle.execute_query(ExtractionQueries.COUNT_QUERY)
-            total_count = count_result[0]['TOTAL_COUNT'] if count_result else 0
-            
-            # 获取类型分布
-            type_result = self.oracle.execute_query(ExtractionQueries.TYPE_DISTRIBUTION_QUERY)
-            
-            # 获取描述长度统计
-            stats_result = self.oracle.execute_query(ExtractionQueries.DESCRIPTION_STATS_QUERY)
-            
-            return {
-                'total_materials': total_count,
-                'type_distribution': type_result,
-                'description_stats': stats_result[0] if stats_result else {}
-            }
-            
-        finally:
-            self.oracle.disconnect()
+    # ============ 缓存管理 ============
+    def clear_cache(self) -> None:
+        """清空查询缓存"""
+        self.cache.clear()
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        return self.cache.stats()
 ```
 
 #### 2.2.4 ETL数据管道
 ```python
 class ETLPipeline:
-    """ETL数据管道 - Oracle到PostgreSQL的数据同步"""
+    """
+    ETL数据管道 - Oracle到PostgreSQL的数据同步
     
-    def __init__(self, oracle_adapter: OracleDataSourceAdapter, 
+    职责：
+    - Extract: 使用Oracle连接适配器执行业务查询（含多表JOIN）
+    - Transform: 对称处理、数据验证、清洗、转换
+    - Load: 批量写入PostgreSQL、事务管理、错误恢复
+    """
+    
+    def __init__(self, oracle_adapter: OracleConnectionAdapter, 
                  pg_session: AsyncSession):
         self.oracle_adapter = oracle_adapter
         self.pg_session = pg_session
+        self.processor = SimpleMaterialProcessor()
         self.processed_count = 0
         self.failed_count = 0
     
+    # ==================== Extract ====================
+    async def _extract_materials_batch(
+        self, 
+        batch_size: int = 1000,
+        offset: int = 0
+    ) -> AsyncGenerator[List[Dict], None]:
+        """
+        从Oracle批量提取物料数据（含多表JOIN）
+        
+        ✅ 使用Task 1.2提供的连接和查询能力
+        ✅ 包含业务查询逻辑（JOIN）
+        """
+        # ETL管道定义的业务查询
+        query = """
+        SELECT 
+            m.code as erp_code,
+            m.name as material_name,
+            m.materialspec as specification,
+            m.materialtype as model,
+            m.pk_marbasclass as category_id,
+            c.name as category_name,          -- ✅ JOIN获取
+            c.code as category_code,
+            m.pk_measdoc as unit_id,
+            u.name as unit_name,              -- ✅ JOIN获取
+            u.ename as unit_english_name,
+            m.enablestate as enable_state,
+            m.ename as english_name,
+            m.ematerialspec as english_spec,
+            m.materialshortname as short_name,
+            m.materialmnecode as mnemonic_code,
+            m.memo as memo,
+            m.creationtime as created_time,
+            m.modifiedtime as modified_time,
+            m.pk_org as org_id
+        FROM bd_material m
+        LEFT JOIN bd_marbasclass c ON m.pk_marbasclass = c.pk_marbasclass
+        LEFT JOIN bd_measdoc u ON m.pk_measdoc = u.pk_measdoc
+        WHERE m.enablestate = 2
+        ORDER BY m.code
+        OFFSET :offset ROWS FETCH NEXT :batch_size ROWS ONLY
+        """
+        
+        current_offset = offset
+        while True:
+            params = {'offset': current_offset, 'batch_size': batch_size}
+            
+            # ✅ 使用Task 1.2的execute_query方法
+            batch = await self.oracle_adapter.execute_query(query, params)
+            
+            if not batch:
+                break
+            
+            yield batch
+            current_offset += batch_size
+    
+    async def _extract_materials_incremental(
+        self, 
+        since_time: str
+    ) -> AsyncGenerator[List[Dict], None]:
+        """增量提取（使用Task 1.2的连接能力）"""
+        query = """
+        SELECT m.*, c.name as category_name, u.name as unit_name
+        FROM bd_material m
+        LEFT JOIN bd_marbasclass c ON m.pk_marbasclass = c.pk_marbasclass
+        LEFT JOIN bd_measdoc u ON m.pk_measdoc = u.pk_measdoc
+        WHERE m.modifiedtime > TO_TIMESTAMP(:since_time, 'YYYY-MM-DD HH24:MI:SS')
+        """
+        
+        # ✅ 使用Task 1.2的流式查询
+        async for batch in self.oracle_adapter.execute_query_generator(
+            query, 
+            {'since_time': since_time},
+            batch_size=1000
+        ):
+            yield batch
+    
+    # ==================== Transform ====================
+    async def _process_batch(self, batch: List[Dict]) -> List[MaterialsMaster]:
+        """
+        数据转换和处理（对称处理）
+        
+        包含：
+        - 数据验证
+        - 对称处理（4步算法）
+        - 数据映射
+        """
+        processed_records = []
+        
+        for raw_record in batch:
+            try:
+                # 1. 数据验证
+                if not self._validate_record(raw_record):
+                    continue
+                
+                # 2. 构建完整描述
+                full_description = self._build_full_description(raw_record)
+                
+                # 3. 对称处理（与在线查询使用相同的算法）
+                processed_data = await self.processor.process(full_description)
+                
+                # 4. 构建PostgreSQL记录
+                pg_record = self._build_postgres_record(
+                    raw_record, 
+                    processed_data
+                )
+                
+                processed_records.append(pg_record)
+                
+            except Exception as e:
+                logger.error(f"处理记录失败: {raw_record.get('erp_code')}, {e}")
+                self.failed_count += 1
+                continue
+        
+        self.processed_count += len(processed_records)
+        return processed_records
+    
+    # ==================== Load ====================
+    async def _load_batch(self, batch: List[MaterialsMaster]) -> None:
+        """批量写入PostgreSQL（事务管理）"""
+        async with self.pg_session.begin():
+            self.pg_session.add_all(batch)
+            await self.pg_session.commit()
+    
+    # ==================== 公共接口 ====================
     async def run_full_sync(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """
         执行全量数据同步
@@ -669,96 +846,40 @@ class ETLPipeline:
         """
         start_time = datetime.now()
         
+        job_log = ETLJobLog(
+            job_type='full_sync',
+            status='running',
+            started_at=start_time
+        )
+        await self.pg_session.add(job_log)
+        
         try:
-            # 获取源数据统计
-            stats = await self.oracle_adapter.get_material_statistics()
-            total_count = stats['total_materials']
+            # Extract → Transform → Load
+            async for batch in self._extract_materials_batch():
+                processed = await self._process_batch(batch)
+                await self._load_batch(processed)
+                
+                # 进度回调
+                if progress_callback:
+                    progress_callback(self.processed_count, self.failed_count)
             
-            logger.info(f"开始全量同步，预计处理 {total_count} 条物料数据")
-            
-            # 分批处理数据
-            async for batch in self.oracle_adapter.extract_materials_batch():
-                await self._process_batch(batch, progress_callback, total_count)
-            
-            # 更新索引和统计信息
-            await self._update_database_indexes()
-            
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
+            job_log.status = 'completed'
+            job_log.completed_at = datetime.now()
+            job_log.processed_records = self.processed_count
+            job_log.failed_records = self.failed_count
             
             return {
                 'total_processed': self.processed_count,
                 'total_failed': self.failed_count,
-                'success_rate': self.processed_count / (self.processed_count + self.failed_count) * 100,
-                'duration_seconds': duration,
-                'processing_speed': self.processed_count / duration if duration > 0 else 0
+                'success_rate': self.processed_count / (self.processed_count + self.failed_count) * 100 if self.processed_count + self.failed_count > 0 else 0,
+                'duration_seconds': (job_log.completed_at - start_time).total_seconds()
             }
             
         except Exception as e:
+            job_log.status = 'failed'
+            job_log.error_message = str(e)
             logger.error(f"ETL管道执行失败: {e}")
             raise
-    
-    async def _process_batch(self, batch: List[Dict], 
-                           progress_callback: Optional[Callable], 
-                           total_count: int):
-        """处理单个批次的数据 - 基于真实Oracle表结构"""
-        async with self.pg_session.begin():  # 事务性处理
-            for item in batch:
-                try:
-                    # 构建完整的物料描述用于对称处理
-                    full_description = self._build_full_description(item)
-                    
-                    # 应用对称处理
-                    parsed = await self.oracle_adapter.processor.process_material_description(
-                        full_description
-                    )
-                    
-                    # 构建数据库记录（匹配真实Oracle字段）
-                    material_record = MaterialsMaster(
-                        erp_code=item['ERP_CODE'],
-                        material_name=item['MATERIAL_NAME'],
-                        specification=item.get('SPECIFICATION'),
-                        model=item.get('MODEL'),
-                        english_name=item.get('ENGLISH_NAME'),
-                        english_spec=item.get('ENGLISH_SPEC'),
-                        short_name=item.get('SHORT_NAME'),
-                        mnemonic_code=item.get('MNEMONIC_CODE'),
-                        memo=item.get('REMARK'),
-                        
-                        # Oracle关联字段
-                        oracle_category_id=item.get('CATEGORY_ID'),
-                        oracle_brand_id=item.get('BRAND_ID'),
-                        oracle_unit_id=item.get('UNIT_ID'),
-                        oracle_org_id=item.get('ORG_ID'),
-                        enable_state=item.get('ENABLE_STATE', 2),
-                        
-                        # 查重系统字段
-                        normalized_name=parsed.standardized_name,
-                        attributes=parsed.attributes,
-                        detected_category=parsed.detected_category,
-                        category_confidence=parsed.confidence,
-                        
-                        # 时间字段
-                        oracle_created_time=self._parse_oracle_datetime(item.get('CREATED_TIME')),
-                        oracle_modified_time=self._parse_oracle_datetime(item.get('MODIFIED_TIME')),
-                        source_system='oracle_erp'
-                    )
-                    
-                    self.pg_session.add(material_record)
-                    self.processed_count += 1
-                    
-                except Exception as e:
-                    logger.error(f"处理物料失败 {item.get('ERP_CODE', 'UNKNOWN')}: {e}")
-                    self.failed_count += 1
-                    continue
-            
-            # 提交批次
-            await self.pg_session.commit()
-            
-            # 进度回调
-            if progress_callback:
-                progress = (self.processed_count + self.failed_count) / total_count * 100
-                progress_callback(progress, self.processed_count, self.failed_count)
     
     def _build_full_description(self, item: Dict) -> str:
         """基于Oracle字段构建完整的物料描述"""
@@ -843,6 +964,7 @@ CREATE TABLE materials_master (
     -- 系统管理字段
     source_system VARCHAR(50) DEFAULT 'oracle_erp',
     sync_status VARCHAR(20) DEFAULT 'synced', -- synced, pending, failed
+    last_sync_at TIMESTAMP, -- 最后同步时间（从SyncStatusMixin继承）
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -879,6 +1001,7 @@ CREATE TABLE material_categories (
     
     -- 系统管理字段
     sync_status VARCHAR(20) DEFAULT 'synced',
+    last_sync_at TIMESTAMP, -- 最后同步时间（从SyncStatusMixin继承）
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -907,6 +1030,7 @@ CREATE TABLE measurement_units (
     
     -- 系统管理字段
     sync_status VARCHAR(20) DEFAULT 'synced',
+    last_sync_at TIMESTAMP, -- 最后同步时间（从SyncStatusMixin继承）
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -944,6 +1068,21 @@ CREATE TABLE synonyms (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- AI知识库分类表（区分于Oracle ERP分类）
+CREATE TABLE knowledge_categories (
+    id SERIAL PRIMARY KEY,
+    category_name VARCHAR(100) UNIQUE NOT NULL, -- 分类名称（来自Oracle真实数据动态生成）
+    keywords TEXT[] NOT NULL, -- 检测关键词数组（基于词频统计）
+    detection_confidence DECIMAL(3,2) DEFAULT 0.8, -- 检测置信度阈值
+    category_type VARCHAR(50) DEFAULT 'general', -- 分类类型
+    priority INTEGER DEFAULT 50, -- 优先级（用于多分类匹配排序）
+    data_source VARCHAR(50) DEFAULT 'oracle_real_data', -- 数据来源标识
+    is_active BOOLEAN DEFAULT TRUE, -- 是否激活
+    created_by VARCHAR(50) DEFAULT 'system',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ETL任务执行记录表（新增）
 CREATE TABLE etl_job_logs (
     id SERIAL PRIMARY KEY,
@@ -974,8 +1113,13 @@ CREATE INDEX idx_extraction_rules_category_priority ON extraction_rules (materia
 CREATE INDEX idx_synonyms_original_category ON synonyms (original_term, category) WHERE is_active = TRUE;
 CREATE INDEX idx_synonyms_type ON synonyms (synonym_type) WHERE is_active = TRUE;
 
--- 类别管理索引
+-- Oracle ERP分类索引
 CREATE INDEX idx_categories_code ON material_categories (category_code) WHERE is_active = TRUE;
+
+-- AI知识库分类索引
+CREATE INDEX idx_knowledge_category_name ON knowledge_categories (category_name);
+CREATE INDEX idx_knowledge_category_keywords_gin ON knowledge_categories USING gin (keywords);
+CREATE INDEX idx_knowledge_category_active ON knowledge_categories (is_active) WHERE is_active = TRUE;
 CREATE INDEX idx_categories_keywords ON material_categories USING gin (keywords);
 
 -- ETL监控索引

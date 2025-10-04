@@ -5,27 +5,60 @@
 
 ## 🚀 快速开始
 
-### 完整流程（推荐）
+### 🎯 一键完整测试（强烈推荐）
 ```bash
-# 1. 分析Oracle真实数据
-python analyze_real_data.py
+# 运行完整测试流程：生成知识库 → SQL导入 → Python导入 → 对称性验证
+python run_full_import_verification.py
 
-# 2. 生成标准化规则和词典（自动清理旧文件）
-python generate_standardized_rules.py
+# 或使用批处理脚本（Windows）
+run_full_verification.bat
+```
 
-# 3. 生成PostgreSQL导入脚本（自动清理旧SQL文件）
+**这个集成脚本会自动完成：**
+1. ✅ 生成SQL导入脚本
+2. ✅ 执行SQL导入（方式一）验证数据正确性
+3. ✅ 清空数据库
+4. ✅ 执行Python异步导入（方式二）
+5. ✅ 运行对称性验证，确保两种导入方式结果完全一致
+6. ✅ 生成详细的测试报告（JSON格式）
+
+**测试结果：** 
+- 耗时：约20秒
+- 导入记录：6条规则 + 38,068个同义词 + 1,594个分类
+- 验证项：6/6全部通过
+
+---
+
+### 统一流程（手动执行）
+```bash
+# 1. 统一生成知识库（规则+词典+分类关键词，基于Oracle真实数据，自动清理旧文件）
+python material_knowledge_generator.py
+
+# 2. 生成PostgreSQL导入脚本（自动清理旧SQL文件）
 python generate_sql_import_script.py
 
-# 4. 导入到PostgreSQL（选择一种方式）
-# 方式A: 使用生成的SQL脚本
-psql -h localhost -U matmatch -d matmatch -f postgresql_import_YYYYMMDD_HHMMSS.sql
-# 方式B: 使用Python脚本
-python import_to_postgresql.py
-# 方式C: 使用批处理（Windows）
-quick_import.bat
+# 3. 导入到PostgreSQL（选择一种方式）
+# 方式A: 使用批处理快速导入（Windows，推荐）
+quick_import_knowledge.bat
+# 方式B: 使用生成的SQL脚本（跨平台）
+psql -h 127.0.0.1 -U postgres -d matmatch -f postgresql_import_YYYYMMDD_HHMMSS.sql
+# 方式C: 使用Backend Python异步导入（用于对称性验证）
+cd ../backend
+python scripts/import_knowledge_base.py --data-dir ../database --clear
+
+# 4. 验证对称性（可选）
+python ../backend/scripts/verify_symmetry.py
 
 # 5. 测试规则效果
 python test_generated_rules.py
+```
+
+### 可选：深度数据分析（诊断工具）
+```bash
+# 生成详细的Oracle数据分析报告（用于数据探索和质量评估）
+python analyze_real_data.py
+# 输出：oracle_data_analysis_*.json + oracle_data_analysis_report_*.md
+# 注意：此步骤为可选，仅用于诊断分析，不影响生产流程
 ```
 
 ### 🧹 自动清理功能
@@ -37,26 +70,27 @@ python test_generated_rules.py
 
 ### 🔧 核心执行脚本详细说明
 
-#### 1. 数据分析脚本
+#### 1. 核心生成脚本（生产流程）
 | 脚本名称 | 功能描述 | 输入数据 | 输出文件 | 数据内容 |
 |----------|----------|----------|----------|----------|
-| **`analyze_real_data.py`** | 🔍 分析Oracle真实数据 | Oracle数据库(230,421条物料) | `oracle_data_analysis_YYYYMMDD_HHMMSS.json`<br>`oracle_data_analysis_report_YYYYMMDD_HHMMSS.md` | **JSON**: 尺寸模式、材质模式、品牌模式、类别分布<br>**MD**: 可读的统计报告和数据质量分析 |
+| **`material_knowledge_generator.py`** | 🧠 统一生成物料知识库 | Oracle数据库(230,421条物料) | `standardized_extraction_rules_YYYYMMDD_HHMMSS.json`<br>`standardized_synonym_dictionary_YYYYMMDD_HHMMSS.json`<br>`standardized_synonym_records_YYYYMMDD_HHMMSS.json`<br>`standardized_category_keywords_YYYYMMDD_HHMMSS.json`<br>`category_statistics_YYYYMMDD_HHMMSS.json`<br>`rules_documentation_YYYYMMDD_HHMMSS.md` | **规则文件**: 6条提取规则(置信度90%-98%)<br>**词典文件**: 1,749组同义词映射<br>**同义词记录**: 38,068条扁平记录(供数据库导入)<br>**分类关键词**: 1,594个真实分类(基于Oracle数据动态生成)<br>**统计报告**: 分类分布和检测覆盖率<br>**使用文档**: 详细的使用说明和示例<br>**核心算法**: 内置真实数据分析算法，动态生成所有知识库 |
 
-#### 2. 规则生成脚本
+#### 2. 诊断分析脚本（可选工具）
 | 脚本名称 | 功能描述 | 输入数据 | 输出文件 | 数据内容 |
 |----------|----------|----------|----------|----------|
-| **`generate_standardized_rules.py`** | 📊 生成标准化规则和词典 | Oracle分析结果JSON | `standardized_extraction_rules_YYYYMMDD_HHMMSS.json`<br>`standardized_synonym_dictionary_YYYYMMDD_HHMMSS.json`<br>`standardized_category_keywords_YYYYMMDD_HHMMSS.json`<br>`standardized_rules_usage_YYYYMMDD_HHMMSS.md` | **规则文件**: 6条提取规则(置信度88%-98%)<br>**词典文件**: 3,484个同义词(含全角半角+大小写变体)<br>**关键词文件**: 1,243个类别关键词<br>**使用文档**: 详细的使用说明和示例 |
+| **`analyze_real_data.py`** | 🔍 深度分析Oracle数据 | Oracle数据库(230,421条物料) | `oracle_data_analysis_YYYYMMDD_HHMMSS.json`<br>`oracle_data_analysis_report_YYYYMMDD_HHMMSS.md` | **JSON**: 尺寸模式、材质模式、品牌模式、类别分布<br>**MD**: 可读的统计报告和数据质量分析<br>**用途**: 仅用于诊断和数据探索，不影响生产流程 |
 
 #### 3. 数据库导入脚本
 | 脚本名称 | 功能描述 | 输入数据 | 输出文件 | 数据内容 |
 |----------|----------|----------|----------|----------|
-| **`generate_sql_import_script.py`** | 🗄️ 生成PostgreSQL导入脚本 | 标准化JSON文件 | `postgresql_import_YYYYMMDD_HHMMSS.sql`<br>`postgresql_import_usage_YYYYMMDD_HHMMSS.md` | **SQL脚本**: 4,596条INSERT语句<br>**使用说明**: 导入步骤和注意事项 |
-| **`import_to_postgresql.py`** | 🚀 Python方式导入PostgreSQL | 标准化JSON文件 | 直接写入PostgreSQL数据库 | 无文件输出，直接导入到数据库表 |
+| **`generate_sql_import_script.py`** | 🗄️ 生成PostgreSQL导入SQL脚本 | 标准化JSON文件 | `postgresql_import_YYYYMMDD_HHMMSS.sql`<br>`postgresql_import_usage_YYYYMMDD_HHMMSS.md` | **SQL脚本**: 39,668条INSERT语句（6条规则+38,068条同义词+1,594个分类）<br>**使用说明**: 导入步骤和注意事项 |
 
 #### 4. 测试验证脚本
 | 脚本名称 | 功能描述 | 输入数据 | 输出文件 | 数据内容 |
 |----------|----------|----------|----------|----------|
 | **`test_generated_rules.py`** | 🧪 测试规则效果 | 生成的规则和词典文件 | 测试报告(控制台输出) | 规则匹配成功率、类别检测准确率、性能指标 |
+
+**注意**：`analyze_real_data.py` 生成的分析文件**不会被其他脚本读取**，它仅用于数据探索和质量评估。`material_knowledge_generator.py` 已内置所有必要的数据分析算法，可独立完成知识库生成。
 
 ### ⚙️ 配置和连接文件
 | 文件名 | 功能描述 | 配置内容 |
@@ -70,14 +104,16 @@ python test_generated_rules.py
 |--------|----------|----------|
 | **`check_oracle_tables.py`** | 检查Oracle表结构 | 调试Oracle连接问题 |
 | **`check_material_fields.py`** | 检查物料表字段 | 验证表结构和字段 |
-| **`quick_import.bat`** | Windows快速导入批处理 | Windows环境一键导入 |
+| **`quick_import_knowledge.bat`** | Windows快速导入批处理 | Windows环境一键导入知识库（推荐） |
 
-### 🏗️ 旧版本/备用脚本
-| 文件名 | 功能描述 | 状态 | 说明 |
-|--------|----------|------|------|
-| `generate_rules_and_dictionary.py` | 旧版规则生成器 | 🔄 已替代 | 被`generate_standardized_rules.py`替代 |
-| `intelligent_rule_generator.py` | 智能规则生成器核心 | 📚 参考 | 高级定制开发参考 |
+### 🏗️ 已删除的重复/过时脚本
+| 文件名 | 原功能描述 | 删除原因 | 替代方案 |
+|--------|------------|----------|----------|
+| `generate_rules_and_dictionary.py` | 薄包装脚本 | ❌ 重复实现 | 统一到`material_knowledge_generator.py` |
+| `intelligent_rule_generator.py` | 核心算法实现 | ❌ 重复实现 | 统一到`material_knowledge_generator.py` |
 | `init_postgresql_rules.py` | 旧版PostgreSQL初始化 | 🔄 已替代 | 被新的导入方案替代 |
+| `quick_import.bat` | 旧版Windows导入脚本 | ❌ 表名错误 | `quick_import_knowledge.bat` |
+| `import_to_postgresql.py` | 旧版Python导入脚本 | ❌ schema过时，使用`material_categories`而非`knowledge_categories` | `backend/scripts/import_knowledge_base.py` |
 | `one_click_setup.py` | 一键设置脚本 | 🔄 已替代 | 被分步流程替代 |
 
 ### 📄 文档和指南
@@ -96,47 +132,63 @@ python test_generated_rules.py
 | `oracle_data_analysis_20251002_184248.json` | ~15MB | 嵌套JSON对象 | **material_patterns**: 尺寸模式(20个)、品牌模式(20个)、材质模式(11个)<br>**category_distribution**: 2,523个类别的分布统计<br>**unit_distribution**: 83个单位的使用统计<br>**analysis_summary**: 总体数据质量评估 |
 | `oracle_data_analysis_report_20251002_184248.md` | ~5MB | Markdown文档 | 可读的统计报告、数据质量分析、模式发现总结 |
 
-#### 2. 标准化规则文件（最新版本：20251003_090354）
+#### 2. 标准化规则文件（最新版本：20251003_193332）
 | 文件名 | 记录数 | 数据结构 | 关键内容 |
 |--------|--------|----------|----------|
-| `standardized_extraction_rules_20251003_090354.json` | 6条规则 | JSON数组 | **规则类型**: 尺寸规格、螺纹规格、材质类型、品牌名称、压力等级、公称直径<br>**置信度**: 88%-98%<br>**正则表达式**: 支持全角半角字符<br>**示例数据**: 每条规则包含5个真实示例 |
-| `standardized_synonym_dictionary_20251003_090354.json` | 1,749组 | 嵌套JSON对象 | **同义词类型**: 尺寸规格、材质、品牌、单位<br>**全角半角映射**: 76个字符对<br>**大小写变体**: 常见品牌和材质的多种写法<br>**总词汇量**: 3,484个同义词 |
-| `standardized_category_keywords_20251003_090354.json` | 1,243个类别 | 嵌套JSON对象 | **类别信息**: 关键词列表、检测置信度、类别类型、优先级<br>**覆盖范围**: 轴承、螺栓、阀门、管件、电气等10+类别<br>**检测算法**: 加权关键词匹配 |
-| `standardized_rules_usage_20251003_090354.md` | 文档 | Markdown文档 | **使用说明**: 每条规则的详细说明和示例<br>**同义词分类**: 按类型展示同义词映射关系<br>**类别检测**: 高优先级类别的关键词和配置 |
+| `standardized_extraction_rules_20251003_193332.json` | 6条规则 | JSON数组 | **规则类型**: 尺寸规格、螺纹规格、材质类型、品牌名称、压力等级、公称直径<br>**置信度**: 90%-98%<br>**正则表达式**: 支持全角半角字符<br>**示例数据**: 每条规则包含真实示例 |
+| `standardized_synonym_dictionary_20251003_193332.json` | 1,749组 | 嵌套JSON对象 | **同义词类型**: 尺寸规格、材质、品牌、单位<br>**全角半角映射**: 76个字符对<br>**大小写变体**: 常见品牌和材质的多种写法 |
+| `standardized_synonym_records_20251003_193332.json` | 38,068条记录 | JSON数组（扁平格式） | **供数据库导入**: 每条记录包含original_term, standard_term, category, synonym_type<br>**直接映射**: PostgreSQL synonyms表结构 |
+| `standardized_category_keywords_20251003_193332.json` | 1,594个分类 | 嵌套JSON对象 | **真实分类**: 基于Oracle数据动态生成（非AI幻觉）<br>**关键词数组**: 每个分类的高频关键词列表<br>**覆盖范围**: 桥架、原料、合金料、轴承、螺栓等1,594个真实分类 |
+| `rules_documentation_20251003_193332.md` | 文档 | Markdown文档 | **使用说明**: 每条规则的详细说明和示例<br>**置信度说明**: 各规则的适用场景 |
 
-#### 3. PostgreSQL导入文件
+#### 3. PostgreSQL导入文件（最新版本：20251003_195452）
 | 文件名 | SQL语句数 | 数据结构 | 关键内容 |
 |--------|-----------|----------|----------|
-| `postgresql_import_20251002_185603.sql` | 4,596条 | SQL脚本 | **CREATE TABLE**: 创建extraction_rules、synonyms、material_categories表<br>**INSERT语句**: 6条规则 + 3,484个同义词 + 1,243个类别<br>**索引创建**: 性能优化索引<br>**数据验证**: 导入后的数据完整性检查 |
-| `postgresql_import_usage_20251002_185603.md` | 文档 | Markdown文档 | **导入步骤**: 详细的psql命令和Python脚本使用方法<br>**环境要求**: PostgreSQL版本和扩展要求<br>**故障排除**: 常见问题和解决方案 |
+| `postgresql_import_20251003_195452.sql` | 39,668条 | SQL脚本 | **CREATE TABLE**: 创建extraction_rules、synonyms、knowledge_categories表<br>**INSERT语句**: 6条规则 + 38,068个同义词 + 1,594个分类<br>**索引创建**: 性能优化索引（包含GIN索引）<br>**数据验证**: 导入后的数据完整性检查 |
+| `postgresql_import_usage_20251003_195452.md` | 文档 | Markdown文档 | **导入步骤**: 详细的psql命令和快速导入方法<br>**环境要求**: PostgreSQL版本和扩展要求<br>**验证查询**: 导入后的数据验证SQL |
 
 #### 4. 数据文件关系图
 ```
-oracle_data_analysis_*.json (原始分析)
-    ↓ (输入到)
+生产流程（主流程）:
+Oracle数据库 (230,421条物料)
+    ↓ (material_knowledge_generator.py 内置分析算法)
 standardized_extraction_rules_*.json (6条规则)
-standardized_synonym_dictionary_*.json (3,484个同义词)  
-standardized_category_keywords_*.json (1,243个类别)
-    ↓ (输入到)
-postgresql_import_*.sql (4,596条SQL语句)
-    ↓ (导入到)
-PostgreSQL数据库 (extraction_rules, synonyms, material_categories表)
+standardized_synonym_dictionary_*.json (1,749组同义词)
+standardized_synonym_records_*.json (38,068条记录)
+standardized_category_keywords_*.json (1,594个真实分类)
+    ↓ (generate_sql_import_script.py)
+postgresql_import_*.sql (SQL导入脚本)
+    ↓ (quick_import_knowledge.bat 或 backend/scripts/import_knowledge_base.py)
+PostgreSQL数据库 (extraction_rules, synonyms, knowledge_categories表)
+
+诊断流程（可选，独立）:
+Oracle数据库 (230,421条物料)
+    ↓ (analyze_real_data.py)
+oracle_data_analysis_*.json + report_*.md
+    ↓ (人工查看，用于数据探索)
+不影响生产流程
 ```
 
 ## 🎯 文件使用流程图
 
 ```
-Oracle数据库 
-    ↓ (analyze_real_data.py)
-Oracle分析结果JSON + 报告MD
-    ↓ (generate_standardized_rules.py)  
-标准化规则JSON + 词典JSON + 关键词JSON
+主流程（生产环境）:
+Oracle数据库 (230,421条物料)
+    ↓ (material_knowledge_generator.py - 内置真实数据分析算法)
+统一知识库: 规则JSON + 词典JSON + 分类关键词JSON (1,594个真实分类)
     ↓ (generate_sql_import_script.py)
 PostgreSQL导入SQL脚本
-    ↓ (psql 或 import_to_postgresql.py)
+    ↓ (quick_import_knowledge.bat 或 backend/scripts/import_knowledge_base.py)
 PostgreSQL数据库
     ↓ (test_generated_rules.py)
 测试报告
+
+可选诊断流程（数据探索）:
+Oracle数据库
+    ↓ (analyze_real_data.py)
+详细分析报告 (oracle_data_analysis_*.json + *.md)
+    ↓ (人工查看)
+用于数据质量评估和特征探索
 ```
 
 ## 📊 实际输出结果（基于真实数据）
@@ -156,13 +208,13 @@ PostgreSQL数据库
   - 公称直径提取（置信度95%）
 
 ### 生成的标准化同义词数量
-- **同义词组**: **1,749组** （增强版）
-- **同义词总数**: **3,484个** （包含76个全角半角字符映射 + 大小写变体）
-- **类别关键词**: **1,243个** 物料类别
+- **同义词组**: **1,749组** （嵌套格式，用于应用查询）
+- **同义词记录**: **38,068条** （扁平格式，供PostgreSQL导入）
+- **类别关键词**: **1,594个** 真实物料分类（基于Oracle数据动态生成，非AI幻觉）
 - **全角半角支持**: **76个字符对** （数字、字母、符号完整映射）
-- **大小写变体**: **10个常见品牌** （SKF、NSK、FAG等）+ **材质大小写变体**
+- **大小写变体**: **常见品牌和材质** （SKF、NSK、FAG等）
 - **空格标准化**: 自动清理多余空格，确保输入一致性
-- **数据来源**: 100% 基于真实Oracle数据分析
+- **数据来源**: 100% 基于真实Oracle数据分析（material_knowledge_generator.py 内置分析算法）
 
 ## 🧮 核心算法原理
 
@@ -205,28 +257,42 @@ EXTRACTION_RULES = {
 
 #### 算法原理：
 - **分类算法**: 基于加权关键词匹配的朴素分类器
+- **动态生成**: 分类关键词在运行时从Oracle真实数据动态生成，而非硬编码
+- **关键词提取**: 
+  1. 按分类组织物料描述（230,421条）
+  2. 统计每个分类下的高频词（出现率≥20%）
+  3. 过滤通用词（如"mm"、"kg"等）
+  4. 选择前10个最高频词作为关键词
 - **权重计算**: `类别得分 = Σ(关键词权重 × 匹配次数)`
 - **决策规则**: 选择得分最高且超过置信度阈值的类别
 ```python
-def detect_category(description):
-    scores = {}
-    for category, keywords in CATEGORY_KEYWORDS.items():
-        score = 0
-        for keyword in keywords['primary']:
-            if keyword in description: score += 0.6    # 主要关键词权重
-        for keyword in keywords['secondary']:
-            if keyword in description: score += 0.3    # 次要关键词权重
-        for brand in keywords.get('brands', []):
-            if brand in description: score += 0.1     # 品牌关键词权重
-        scores[category] = score
+def _generate_category_keywords_from_data(self) -> Dict[str, List[str]]:
+    """基于Oracle真实物料数据生成分类关键词"""
+    category_keywords = {}
+    category_materials = defaultdict(list)
     
-    return max(scores, key=scores.get) if scores else 'general'
+    # 按分类组织物料描述
+    for material in self.materials_data:
+        category_name = material.get('CATEGORY_NAME', '')
+        if category_name:
+            full_desc = f"{name} {spec} {material_type}".strip()
+            category_materials[category_name].append(full_desc)
+    
+    # 为每个分类提取关键词（词频≥20%）
+    for category_name, descriptions in category_materials.items():
+        if len(descriptions) >= 3:
+            keywords = self._extract_category_keywords(category_name, descriptions)
+            category_keywords[category_name] = keywords
+    
+    return category_keywords
 ```
 
 #### 实际类别数据：
-- **物料类别**: 1,243个基于真实Oracle数据
-- **检测准确率**: ≥90% (基于230,421条数据验证)
-- **支持类别**: 轴承、螺栓、阀门、管件、电气元件等10+类
+- **物料类别**: **1,594个** 真实Oracle分类（动态生成）
+- **数据来源**: 230,421条物料 × 2,523个分类体系
+- **生成方式**: 运行时动态分析，非硬编码
+- **检测准确率**: ≥90% (基于真实数据验证)
+- **主要类别**: 车类(23,259条)、零件(16,207条)、轴承(3,938条)、弯头(3,043条)等
 
 ### 3. 多字段加权算法：**基于加权融合的相似度计算**
 

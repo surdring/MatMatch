@@ -110,12 +110,14 @@
 - **AC 0.6 (扩展性验证):** ✅ **已完成** - 已验证规则框架支持新物料类别扩展，建立了完整的工具链支持动态规则生成和更新。
 
 **已交付成果:**
-- `database/oracle_data_analysis_20251002_184248.json` - 完整数据分析结果(230,421条物料数据)
-- `database/standardized_extraction_rules_20251003_090354.json` - 6条标准化提取规则(置信度88%-98%)
-- `database/standardized_synonym_dictionary_20251003_090354.json` - 3,484个同义词词典(含全角半角+大小写变体)
-- `database/standardized_category_keywords_20251003_090354.json` - 1,243个类别关键词(基于真实数据)
+- `database/oracle_data_analysis_20251002_184248.json` - 完整数据分析结果(230,437条物料数据)
+- `database/material_knowledge_generator.py` - **统一的核心处理模块**(集成所有算法，实现对称处理原则)
+- `database/standardized_extraction_rules_20251003_151842.json` - 4条标准化提取规则(置信度90%-98%)
+- `database/standardized_synonym_dictionary_20251003_151842.json` - 10,405组同义词词典(含全角半角+大小写变体)
+- `database/standardized_category_keywords_20251003_151842.json` - 14个类别关键词(基于真实数据)
+- `database/postgresql_import_20251003_152137.sql` - PostgreSQL导入脚本(36,208条SQL语句)
 - `database/README.md` - 完整的算法原理和使用指南
-- `database/postgresql_import_20251002_185603.sql` - PostgreSQL导入脚本(4,596条SQL语句)
+- `database/logs/` - 日志目录(所有生成日志统一存放)
 
 ### **用户故事1: 批量文件查重**
 **优先级:** P0 (最高)  

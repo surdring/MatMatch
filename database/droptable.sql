@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS extraction_rules CASCADE;
+DROP TABLE IF EXISTS synonyms CASCADE;
+DROP TABLE IF EXISTS material_categories CASCADE;
+DROP TABLE IF EXISTS knowledge_categories CASCADE;

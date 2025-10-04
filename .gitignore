@@ -205,3 +205,99 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ==================== 项目特定配置 ====================
+
+# 环境配置文件（包含敏感信息）
+backend/.env
+backend/.env.*
+.env.local
+.env.*.local
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 日志文件
+*.log
+logs/
+backend/logs/
+database/logs/
+
+# 临时文件
+temp/
+tmp/
+*.tmp
+.temp/
+
+# IDE配置（保留团队统一的VSCode配置）
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+
+# 数据文件（不提交大型数据文件）
+*.csv
+*.xlsx
+*.xls
+!specs/**/*.xlsx
+!docs/**/*.xlsx
+
+# Oracle Instant Client（不提交）
+instantclient*/
+oracle_client/
+
+# 知识库生成的临时文件（已标准化的保留）
+database/*_20*.json
+database/*_20*.sql
+database/*_20*.md
+!database/standardized_*.json
+!database/postgresql_import_*.sql
+!database/rules_documentation_*.md
+
+# AI日志目录（保留重要的完成报告）
+# .gemini_logs/
+# 注意：保留所有日志以便追溯开发历史
+
+# 备份文件
+*.bak
+*.backup
+*~
+*.swp
+*.swo
+
+# Python虚拟环境（已在上面，确认排除）
+# venv/
+# .venv/
+
+# 测试覆盖率报告
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# 性能分析文件
+*.prof
+*.pstat
+*.pyprof
+
+# MacOS文件
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows文件
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# 项目构建产物（如果有前端）
+frontend/node_modules/
+frontend/dist/
+frontend/.nuxt/
+frontend/.output/
+frontend/.cache/
