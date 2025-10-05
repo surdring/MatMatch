@@ -17,7 +17,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from backend.api import __version__
-from backend.api.routers import health
+from backend.api.routers import health, materials
 from backend.api.exception_handlers import register_exception_handlers
 from backend.api.middleware import register_middlewares
 from backend.api.dependencies import get_material_processor, reset_material_processor
@@ -143,9 +143,7 @@ register_exception_handlers(app)
 
 # 注册路由
 app.include_router(health.router)
-
-# 后续将在Task 3.2中添加物料查重路由
-# app.include_router(materials.router, prefix="/api/v1")
+app.include_router(materials.router)  # Task 3.2: 批量查重API
 
 
 # ========== 开发辅助端点 ==========

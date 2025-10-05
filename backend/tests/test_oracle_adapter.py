@@ -21,7 +21,7 @@ from backend.adapters.oracle_adapter import (
     SchemaValidationError,
     NetworkTimeoutError
 )
-from core.config import OracleConfig
+from backend.core.config import OracleConfig
 
 
 @pytest_asyncio.fixture

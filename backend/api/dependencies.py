@@ -8,6 +8,7 @@ import logging
 from typing import AsyncGenerator, Optional
 from functools import lru_cache
 
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.session import get_session
@@ -39,14 +40,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
     except Exception as e:
         logger.error(f"Failed to get database session: {str(e)}", exc_info=True)
-        raise ServiceUnavailableException(
-            detail="数据库连接失败",
-            service="database"
-        )
+        raise ServiceUnavailableException("数据库连接失败")
 
 
 async def get_material_processor(
-    db: AsyncSession = None
+    db: AsyncSession = Depends(get_db)
 ) -> UniversalMaterialProcessor:
     """
     获取物料处理器实例（单例模式）
@@ -76,42 +74,28 @@ async def get_material_processor(
             await asyncio.sleep(0.1)
             if _material_processor_instance is not None:
                 return _material_processor_instance
-        raise ServiceUnavailableException(
-            detail="物料处理器初始化超时",
-            service="material_processor"
-        )
+        raise ServiceUnavailableException("物料处理器初始化超时")
     
     try:
         _processor_lock = True
         logger.info("Initializing UniversalMaterialProcessor...")
         
-        # 创建新的数据库会话（如果未提供）
-        if db is None:
-            async for session in get_session():
-                processor = UniversalMaterialProcessor(session)
-                await processor.load_knowledge_base()
-                _material_processor_instance = processor
-                logger.info("UniversalMaterialProcessor initialized successfully")
-                return processor
-        else:
-            processor = UniversalMaterialProcessor(db)
-            await processor.load_knowledge_base()
-            _material_processor_instance = processor
-            logger.info("UniversalMaterialProcessor initialized successfully")
-            return processor
+        # 创建处理器实例
+        processor = UniversalMaterialProcessor(db)
+        await processor._load_knowledge_base()
+        _material_processor_instance = processor
+        logger.info("UniversalMaterialProcessor initialized successfully")
+        return processor
             
     except Exception as e:
         logger.error(f"Failed to initialize material processor: {str(e)}", exc_info=True)
-        raise ServiceUnavailableException(
-            detail="物料处理器初始化失败",
-            service="material_processor"
-        )
+        raise ServiceUnavailableException("物料处理器初始化失败")
     finally:
         _processor_lock = False
 
 
 async def get_similarity_calculator(
-    db: AsyncSession
+    db: AsyncSession = Depends(get_db)
 ) -> SimilarityCalculator:
     """
     获取相似度计算器实例
@@ -132,10 +116,7 @@ async def get_similarity_calculator(
         return calculator
     except Exception as e:
         logger.error(f"Failed to initialize similarity calculator: {str(e)}", exc_info=True)
-        raise ServiceUnavailableException(
-            detail="相似度计算器初始化失败",
-            service="similarity_calculator"
-        )
+        raise ServiceUnavailableException("相似度计算器初始化失败")
 
 
 async def reset_material_processor() -> None:

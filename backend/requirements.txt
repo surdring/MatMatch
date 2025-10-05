@@ -3,6 +3,7 @@ fastapi==0.110.0
 uvicorn[standard]==0.29.0
 pydantic==2.7.0
 pydantic-settings==2.2.1
+python-multipart==0.0.20  # Required for file uploads
 
 # Database
 sqlalchemy==2.0.30
@@ -17,9 +18,11 @@ httpx==0.27.0  # Required for FastAPI TestClient
 # Logging and Monitoring
 structlog==24.1.0
 
-# File Processing (for future Excel handling)
+# File Processing
 pandas==2.2.2
 openpyxl==3.1.2
+xlrd==2.0.1  # For .xls file support
+rapidfuzz>=3.8.0  # For fuzzy string matching (Python 3.13 compatible)
 
 # Async utilities
 asyncio-mqtt==0.16.1
