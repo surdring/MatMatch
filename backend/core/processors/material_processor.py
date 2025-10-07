@@ -161,7 +161,7 @@ class UniversalMaterialProcessor:
                 }
                 for rule in rules
             ]
-            logger.info(f"✅ Loaded {len(self._extraction_rules)} extraction rules from PostgreSQL")
+            logger.info(f"[OK] Loaded {len(self._extraction_rules)} extraction rules from PostgreSQL")
             
             # 2. 加载同义词词典
             stmt = select(Synonym).where(Synonym.is_active == True)
@@ -172,7 +172,7 @@ class UniversalMaterialProcessor:
                 syn.original_term: syn.standard_term
                 for syn in synonyms
             }
-            logger.info(f"✅ Loaded {len(self._synonyms)} synonyms from PostgreSQL")
+            logger.info(f"[OK] Loaded {len(self._synonyms)} synonyms from PostgreSQL")
             
             # 3. 加载分类关键词
             stmt = select(KnowledgeCategory).where(KnowledgeCategory.is_active == True)
@@ -183,7 +183,7 @@ class UniversalMaterialProcessor:
                 cat.category_name: cat.keywords
                 for cat in categories
             }
-            logger.info(f"✅ Loaded {len(self._category_keywords)} categories from PostgreSQL")
+            logger.info(f"[OK] Loaded {len(self._category_keywords)} categories from PostgreSQL")
             
         except Exception as e:
             error_msg = f"Failed to load knowledge base from PostgreSQL: {str(e)}"
@@ -193,7 +193,10 @@ class UniversalMaterialProcessor:
     async def process_material_description(
         self,
         description: str,
-        category_hint: Optional[str] = None
+        category_hint: Optional[str] = None,
+        raw_name: Optional[str] = None,
+        raw_spec: Optional[str] = None,
+        raw_unit: Optional[str] = None
     ) -> ParsedQuery:
         """
         处理物料描述 - 对称处理算法的核心入口
@@ -201,9 +204,12 @@ class UniversalMaterialProcessor:
         Args:
             description: 用户输入的物料描述文本
             category_hint: 可选的类别提示
+            raw_name: 原始物料名称（用于单独清洗）
+            raw_spec: 原始规格型号（用于单独清洗）
+            raw_unit: 原始单位（用于单独清洗）
             
         Returns:
-            ParsedQuery: 包含标准化名称、属性、类别等信息
+            ParsedQuery: 包含标准化名称、属性、类别等信息（含cleaned字段用于前端精确对比）
             
         对称处理流程（4步算法，与SimpleMaterialProcessor一致）:
             步骤1: 智能分类检测
@@ -211,6 +217,8 @@ class UniversalMaterialProcessor:
             步骤3: 同义词替换
             步骤4: 属性提取
         """
+        logger.debug(f"[物料处理开始] description='{description[:50]}...', category_hint={category_hint}")
+        
         # 确保缓存新鲜
         await self._ensure_cache_fresh()
         
@@ -219,6 +227,7 @@ class UniversalMaterialProcessor:
         
         # 步骤0: 验证输入
         if not description or not description.strip():
+            logger.warning("输入描述为空，返回空结果")
             return ParsedQuery(
                 standardized_name="",
                 attributes={},
@@ -231,25 +240,32 @@ class UniversalMaterialProcessor:
         full_description = description.strip()
         
         try:
+            logger.debug(f"开始对称处理流程...")
             # 步骤1: 智能分类检测
+            logger.debug(f"[步骤1] 开始分类检测...")
             detected_category, confidence = self._detect_material_category(
                 full_description,
                 category_hint
             )
+            logger.debug(f"[步骤1] 检测结果: category='{detected_category}', confidence={confidence:.2f}")
             self._processing_steps.append(
                 f"步骤1: 检测到类别'{detected_category}'，置信度{confidence:.2f}"
             )
             
             # 步骤2: 文本标准化
+            logger.debug(f"[步骤2] 开始文本标准化...")
             normalized_text = self._normalize_text(full_description)
             if normalized_text != full_description:
+                logger.debug(f"[步骤2] 标准化: '{full_description[:50]}...' → '{normalized_text[:50]}...'")
                 self._processing_steps.append(
                     f"步骤2: 文本标准化（全角转半角、去除多余空格）"
                 )
             
             # 步骤3: 同义词替换
+            logger.debug(f"[步骤3] 开始同义词替换...")
             standardized_text, replaced_count = self._apply_synonyms(normalized_text)
             if replaced_count > 0:
+                logger.debug(f"[步骤3] 替换了 {replaced_count} 个同义词")
                 self._processing_steps.append(
                     f"步骤3: 同义词替换（{replaced_count}个词）"
                 )
@@ -258,20 +274,61 @@ class UniversalMaterialProcessor:
             standardized_name = self._extract_core_name(standardized_text)
             
             # 步骤4: 属性提取
+            logger.debug(f"[步骤4] 开始属性提取...")
             attributes = self._extract_attributes(standardized_text, detected_category)
             if attributes:
                 attr_str = ', '.join(f"{k}={v}" for k, v in attributes.items())
+                logger.debug(f"[步骤4] 提取到属性: {attr_str}")
                 self._processing_steps.append(
                     f"步骤4: 提取属性 {{{attr_str}}}"
                 )
             
+            # 步骤5: 清洗原始名称、规格、单位（用于前端精确对比）
+            logger.debug(f"[步骤5] 开始清洗原始字段...")
+            cleaned_name = None
+            cleaned_spec = None
+            cleaned_unit = None
+            
+            if raw_name:
+                # 应用13条清洗规则到名称
+                cleaned_name = self._normalize_text(raw_name).strip()
+                if raw_name != cleaned_name:
+                    logger.debug(f"[步骤5] 清洗名称: '{raw_name}' → '{cleaned_name}'")
+                    self._processing_steps.append(
+                        f"步骤5: 清洗名称 '{raw_name}' → '{cleaned_name}'"
+                    )
+            
+            if raw_spec:
+                # 应用13条清洗规则到规格
+                cleaned_spec = self._normalize_text(raw_spec).strip()
+                if raw_spec != cleaned_spec:
+                    logger.debug(f"[步骤5] 清洗规格: '{raw_spec}' → '{cleaned_spec}'")
+                    self._processing_steps.append(
+                        f"步骤5: 清洗规格 '{raw_spec}' → '{cleaned_spec}'"
+                    )
+            
+            if raw_unit:
+                # 单位只需简单清洗（去空格、统一大小写）
+                cleaned_unit = raw_unit.strip().lower()
+                if raw_unit != cleaned_unit:
+                    logger.debug(f"[步骤5] 清洗单位: '{raw_unit}' → '{cleaned_unit}'")
+                    self._processing_steps.append(
+                        f"步骤5: 清洗单位 '{raw_unit}' → '{cleaned_unit}'"
+                    )
+            
             # 构建返回结果
+            # full_description必须使用standardized_text（13条规则+同义词替换），与ETL保持对称
+            logger.info(f"✅ 物料处理完成: category='{detected_category}', attrs={len(attributes)}, steps={len(self._processing_steps)}")
+            
             return ParsedQuery(
-                standardized_name=standardized_name,
+                standardized_name=standardized_text,  # 标准化文本（同义词替换后）
+                cleaned_name=cleaned_name,
+                cleaned_spec=cleaned_spec,
+                cleaned_unit=cleaned_unit,
                 attributes=attributes,
                 detected_category=detected_category,
                 confidence=confidence,
-                full_description=full_description,
+                full_description=standardized_text,  # 使用standardized_text（13条规则+同义词），与ETL对称
                 processing_steps=self._processing_steps.copy()
             )
             
@@ -356,8 +413,9 @@ class UniversalMaterialProcessor:
         
         算法:
             1. 全角转半角（76个字符对）
-            2. 去除多余空格
-            3. 统一大小写（品牌名保留）
+            2. 统一规格分隔符（基于实际数据分析）
+            3. 去除多余空格
+            4. 统一大小写（品牌名保留）
             
         与SimpleMaterialProcessor._normalize_text()保持一致
         """
@@ -367,13 +425,96 @@ class UniversalMaterialProcessor:
         # 1. 全角转半角
         normalized = ''.join(self._fullwidth_map.get(c, c) for c in text)
         
-        # 2. 去除多余空格
+        # 2. 统一规格分隔符（基于实际ERP数据分析）
+        # 将常见的分隔符统一为下划线 "_"
+        normalized = self._normalize_spec_separators(normalized)
+        
+        # 3. 去除多余空格
         normalized = ' '.join(normalized.split())
         
-        # 3. 品牌名保留大小写（这里简化处理）
+        # 4. 品牌名保留大小写（这里简化处理）
         # 未来可以添加品牌名识别和大小写保留逻辑
         
         return normalized
+    
+    def _normalize_spec_separators(self, text: str) -> str:
+        """
+        统一规格型号分隔符（智能增强版 v2.1）
+        
+        基于实际ERP数据分析（230,421条物料，1000条深度验证），共13类标准化规则：
+        
+        0. 希腊字母标准化 (φ/Φ/Ф/δ/Δ → phi/PHI/delta/DELTA)
+        1. 全角符号转半角 (（）：＞＜％ → ():<>%)
+        2. 数学符号标准化 (≥≧≤℃㎡ → >=/<=//C/m2)
+        3. 去除所有空格 (提升匹配精度，M8 20 → M820)
+        4. 乘号类统一 (*×·•・ → _)
+        5. 数字间x/X处理 (200x100 → 200_100)
+        6. 斜杠类统一 (/／\ → _)
+        7. 逗号类统一 (,，、 → _)
+        8. 换行符处理 (\n → _)
+        9. 连字符智能处理 (保留数字范围如10-50)
+        10. 统一转小写 (M8X20 → m8_20, 提升匹配精度)
+        11. 小数点.0优化 (3.0 → 3, 保留3.5)
+        12. 清理连续下划线及首尾下划线
+        
+        Args:
+            text: 输入文本
+            
+        Returns:
+            标准化后的文本
+        """
+        import re
+        
+        # === 规则0: 希腊字母标准化（优先处理） ===
+        text = text.replace('φ', 'phi').replace('Φ', 'PHI').replace('Ф', 'PHI')  # 直径符号
+        text = text.replace('δ', 'delta').replace('Δ', 'DELTA')  # 厚度/增量符号
+        
+        # === 规则1: 全角符号转半角 ===
+        fullwidth_map = {'（': '(', '）': ')', '：': ':', '＞': '>', '＜': '<', '％': '%'}
+        for fw, hw in fullwidth_map.items():
+            text = text.replace(fw, hw)
+        
+        # === 规则2: 数学符号标准化 ===
+        text = text.replace('≥', '>=').replace('≧', '>=').replace('≤', '<=').replace('≦', '<=')
+        text = text.replace('℃', 'C').replace('℉', 'F')  # 温度
+        text = text.replace('㎡', 'm2').replace('㎜', 'mm').replace('㎝', 'cm').replace('㎞', 'km')  # 单位
+        
+        # === 规则3: 去除所有空格（提升匹配精度） ===
+        text = text.replace('\u3000', '')  # 全角空格
+        text = text.replace(' ', '')  # 半角空格
+        
+        # === 规则4: 乘号类统一为下划线 ===
+        text = re.sub(r'[*×·•・]', '_', text)
+        
+        # === 规则5: 处理 x/X 作为乘号（仅在数字间） ===
+        text = re.sub(r'(?<=\d)[xX](?=\d)', '_', text)
+        
+        # === 规则6: 斜杠类统一为下划线 ===
+        text = re.sub(r'[/／\\]', '_', text)
+        
+        # === 规则7: 逗号和顿号统一为下划线 ===
+        text = re.sub(r'[,，、]', '_', text)
+        
+        # === 规则8: 换行符统一为下划线 ===
+        text = text.replace('\n', '_')
+        
+        # === 规则9: 连字符的智能处理（保留数字范围） ===
+        def replace_hyphen(match):
+            before, hyphen, after = match.group(1), match.group(2), match.group(3)
+            return f"{before}{hyphen}{after}" if before.isdigit() and after.isdigit() else f"{before}_{after}"
+        text = re.sub(r'(.)([-–—])(.)', replace_hyphen, text)
+        
+        # === 规则10: 统一转小写（提升匹配精度） ===
+        text = text.lower()
+        
+        # === 规则11: 去除无意义的小数点0 ===
+        text = re.sub(r'(\d+)\.0+(?=\D|_|$)', r'\1', text)
+        
+        # === 规则12: 清理多余下划线 ===
+        text = re.sub(r'_+', '_', text)  # 合并连续
+        text = re.sub(r'^_|_$', '', text)  # 去除首尾
+        
+        return text
     
     def _apply_synonyms(self, text: str) -> Tuple[str, int]:
         """

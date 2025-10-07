@@ -32,6 +32,12 @@ UNIT_PATTERNS = [
     "Unit", "Measurement Unit", "UOM"  # 英文
 ]
 
+# 分类列检测优先级（可选）
+CATEGORY_PATTERNS = [
+    "分类", "物料分类", "类别", "类型", "品类",  # 中文
+    "Category", "Material Category", "Type", "Class"  # 英文
+]
+
 
 # ============================================================================
 # 核心检测函数
@@ -41,10 +47,11 @@ def detect_required_columns(
     available_columns: List[str],
     name_column: Optional[str] = None,
     spec_column: Optional[str] = None,
-    unit_column: Optional[str] = None
+    unit_column: Optional[str] = None,
+    category_column: Optional[str] = None
 ) -> Dict[str, str]:
     """
-    检测必需的3个列（名称、规格、单位）
+    检测必需的3个列（名称、规格、单位）和可选的分类列
     
     支持4种检测方式：
     1. 用户手动指定（精确控制）
@@ -57,25 +64,27 @@ def detect_required_columns(
         name_column: 用户指定的名称列（None时自动检测）
         spec_column: 用户指定的规格列（None时自动检测）
         unit_column: 用户指定的单位列（None时自动检测）
+        category_column: 用户指定的分类列（None时自动检测，可选）
     
     Returns:
         Dict[str, str]: 检测到的列名映射
             {
                 "name": "物料名称",     # 实际使用的名称列
                 "spec": "规格型号",     # 实际使用的规格列
-                "unit": "单位"          # 实际使用的单位列
+                "unit": "单位",         # 实际使用的单位列
+                "category": "分类"      # 实际使用的分类列（可选）
             }
     
     Raises:
         RequiredColumnsMissingError: 当缺少必需列时抛出，包含可用列名和智能推荐
     
     Example:
-        >>> columns = ["序号", "物料名称", "规格型号", "单位"]
+        >>> columns = ["序号", "物料名称", "规格型号", "单位", "分类"]
         >>> detect_required_columns(columns)
-        {"name": "物料名称", "spec": "规格型号", "unit": "单位"}
+        {"name": "物料名称", "spec": "规格型号", "unit": "单位", "category": "分类"}
         
         >>> detect_required_columns(columns, name_column="物料名称")
-        {"name": "物料名称", "spec": "规格型号", "unit": "单位"}
+        {"name": "物料名称", "spec": "规格型号", "unit": "单位", "category": "分类"}
     """
     result = {}
     missing = []
@@ -132,7 +141,21 @@ def detect_required_columns(
             missing.append("单位")
             suggestions["单位"] = []
     
-    # 4. 验证必需列
+    # 4. 检测分类列（可选）
+    if category_column:
+        # 用户手动指定
+        matched = match_column_name(category_column, available_columns)
+        if matched:
+            result["category"] = matched
+        # 如果指定的分类列不存在，不报错，只是不添加到结果中
+    else:
+        # 自动检测
+        detected = auto_detect_column(CATEGORY_PATTERNS, available_columns)
+        if detected:
+            result["category"] = detected
+        # 如果未检测到分类列，不报错，因为它是可选的
+    
+    # 5. 验证必需列
     if missing:
         raise RequiredColumnsMissingError(
             missing_columns=missing,

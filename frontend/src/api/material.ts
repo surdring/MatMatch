@@ -16,11 +16,16 @@ export interface MaterialResult {
 export interface BatchSearchResult {
   row_number: number
   input_data: {
-    material_name: string
-    specification: string
-    unit_name: string
+    material_name?: string
+    specification?: string
+    unit_name?: string
+    name?: string  // 后端返回的字段
+    spec?: string  // 后端返回的字段
+    unit?: string  // 后端返回的字段
+    original_row?: any
   }
-  matches: MaterialResult[]
+  similar_materials: MaterialResult[]  // 后端实际返回的字段名
+  matches?: MaterialResult[]  // 兼容旧版本
   parsed_query?: {
     normalized_name: string
     detected_category: string
@@ -71,15 +76,18 @@ export const materialApi = {
       material_name?: string
       specification?: string
       unit_name?: string
+      category_name?: string
     },
     onProgress?: (progress: number) => void
   ): Promise<ApiResponse<BatchSearchResponse>> {
     const formData = new FormData()
     formData.append('file', file)
     
-    if (columns.material_name) formData.append('material_name_column', columns.material_name)
-    if (columns.specification) formData.append('specification_column', columns.specification)
-    if (columns.unit_name) formData.append('unit_name_column', columns.unit_name)
+    // 修复：使用后端实际期望的参数名
+    if (columns.material_name) formData.append('name_column', columns.material_name)
+    if (columns.specification) formData.append('spec_column', columns.specification)
+    if (columns.unit_name) formData.append('unit_column', columns.unit_name)
+    if (columns.category_name) formData.append('category_column', columns.category_name)
 
     return request.upload('/api/v1/materials/batch-search', formData, onProgress)
   },

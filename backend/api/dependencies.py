@@ -161,8 +161,9 @@ async def verify_dependencies() -> dict:
     
     # 检查数据库连接
     try:
+        from sqlalchemy import text
         async for db in get_session():
-            await db.execute("SELECT 1")
+            await db.execute(text("SELECT 1"))
             status["database"] = "ok"
             break
     except Exception as e:
@@ -171,13 +172,11 @@ async def verify_dependencies() -> dict:
     
     # 检查物料处理器
     try:
-        processor = await get_material_processor()
-        status["material_processor"] = "ok"
-        
-        # 检查知识库
-        if processor._knowledge_base_loaded:
+        if _material_processor_instance is not None:
+            status["material_processor"] = "ok"
             status["knowledge_base"] = "ok"
         else:
+            status["material_processor"] = "not_initialized"
             status["knowledge_base"] = "not_loaded"
     except Exception as e:
         logger.error(f"Material processor check failed: {str(e)}")

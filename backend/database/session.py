@@ -83,7 +83,7 @@ class DatabaseManager:
             autoflush=False
         )
         
-        logger.info("✓ 异步会话工厂已创建")
+        logger.info("[OK] 异步会话工厂已创建")
     
     async def close(self) -> None:
         """关闭数据库连接"""

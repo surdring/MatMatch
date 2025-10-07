@@ -114,6 +114,18 @@ class MaterialsMaster(Base, TimestampMixin, SyncStatusMixin):
         comment="Oracle单位主键 (bd_material.pk_measdoc)"
     )
     
+    # === JOIN获取的关联名称（反规范化设计） ===
+    # ETL管道在Oracle端JOIN获取，直接存储，后端查询时无需再JOIN
+    unit_name: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        comment="单位名称（来自bd_measdoc.name，ETL时JOIN获取）"
+    )
+    
+    category_name: Mapped[Optional[str]] = mapped_column(
+        String(200),
+        comment="分类名称（来自bd_marbasclass.name，ETL时JOIN获取）"
+    )
+    
     oracle_org_id: Mapped[Optional[str]] = mapped_column(
         String(20),
         comment="Oracle组织主键 (bd_material.pk_org)"

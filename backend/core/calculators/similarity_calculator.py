@@ -21,12 +21,12 @@ from backend.core.schemas.material_schemas import ParsedQuery, MaterialResult
 logger = logging.getLogger(__name__)
 
 
-# 默认权重配置（基于业务专家经验 + AHP层次分析法）
+# 默认权重配置（优化版：取消分类权重，重新分配）
 DEFAULT_WEIGHTS = {
-    'name': 0.4,        # 名称相似度 40%
-    'description': 0.3, # 描述相似度 30%
-    'attributes': 0.2,  # 属性相似度 20%
-    'category': 0.1     # 类别相似度 10%
+    'name': 0.5,        # 名称相似度 50% (提升10%)
+    'description': 0.3, # 描述相似度 30% (保持)
+    'attributes': 0.2,  # 属性相似度 20% (保持)
+    'category': 0.0     # 类别相似度 0% (取消)
 }
 
 
@@ -186,10 +186,32 @@ class SimilarityCalculator:
             # 缓存结果
             self._cache[cache_key] = materials
             
+            # 详细日志：显示查询结果
+            # 安全编码日志输出，避免GBK编码错误
+            safe_name = parsed_query.standardized_name[:30].encode('ascii', errors='ignore').decode('ascii')
             logger.info(
                 f"Found {len(materials)} similar materials for "
-                f"'{parsed_query.standardized_name[:30]}...' (similarity >= {min_similarity})"
+                f"'{safe_name}...' (similarity >= {min_similarity})"
             )
+            
+            if materials:
+                logger.info("=" * 80)
+                logger.info(f"查询详情：")
+                # 使用repr()避免编码问题
+                logger.info(f"  输入名称: {repr(parsed_query.standardized_name)}")
+                logger.info(f"  输入属性: {parsed_query.attributes}")
+                logger.info(f"  检测分类: {parsed_query.detected_category}")
+                logger.info("-" * 80)
+                logger.info(f"匹配结果（前5条）：")
+                for i, mat in enumerate(materials[:5], 1):
+                    logger.info(f"  {i}. {mat.erp_code} - {repr(mat.material_name)}")
+                    spec_repr = repr(mat.specification) if mat.specification else '-'
+                    logger.info(f"     规格: {spec_repr} | 单位: {mat.unit_name or '-'} | 分类: {mat.category_name or '-'}")
+                    name_sim = mat.name_similarity if mat.name_similarity is not None else 0.0
+                    desc_sim = mat.description_similarity if mat.description_similarity is not None else 0.0
+                    logger.info(f"     相似度: {mat.similarity_score:.3f} (名称:{name_sim:.3f}, 描述:{desc_sim:.3f})")
+                    logger.info(f"     状态: {'已启用' if mat.enable_state == 2 else '已停用' if mat.enable_state == 3 else '未启用'}")
+                logger.info("=" * 80)
             
             return materials
             
@@ -231,57 +253,52 @@ class SimilarityCalculator:
         
         sql = f"""
         SELECT 
-            erp_code,
-            material_name,
-            specification,
-            model,
-            normalized_name,
-            full_description,
-            attributes,
-            detected_category,
-            category_confidence,
-            oracle_category_id,
-            oracle_unit_id,
+            m.erp_code,
+            m.material_name,
+            m.specification,
+            m.model,
+            m.enable_state,
+            m.unit_name,
+            m.category_name,
+            m.normalized_name,
+            m.full_description,
+            m.attributes,
+            m.detected_category,
+            m.category_confidence,
+            m.oracle_category_id,
+            m.oracle_unit_id,
             -- 多字段加权相似度计算
             (
-                {w_name} * similarity(normalized_name, :query_name) +
-                {w_desc} * similarity(full_description, :query_desc) +
+                {w_name} * similarity(m.normalized_name, :query_name) +
+                {w_desc} * similarity(m.full_description, :query_desc) +
                 {w_attr} * {attr_similarity_sql} +
                 {w_cat} * CASE 
-                    WHEN detected_category = :query_category 
+                    WHEN m.detected_category = :query_category 
                     THEN 1.0 
                     ELSE 0.0 
                 END
             ) AS similarity_score,
             -- 各维度相似度明细（用于透明化）
-            similarity(normalized_name, :query_name) AS name_similarity,
-            similarity(full_description, :query_desc) AS description_similarity,
+            similarity(m.normalized_name, :query_name) AS name_similarity,
+            similarity(m.full_description, :query_desc) AS description_similarity,
             {attr_similarity_sql} AS attributes_similarity,
             CASE 
-                WHEN detected_category = :query_category 
+                WHEN m.detected_category = :query_category 
                 THEN 1.0 
                 ELSE 0.0 
             END AS category_similarity
-        FROM materials_master
+        FROM materials_master m
         WHERE 
-            -- 预筛选：利用GIN索引加速
+            -- 预筛选：利用GIN索引加速（移除分类条件）
             (
-                normalized_name % :query_name OR
-                full_description % :query_desc OR
-                detected_category = :query_category
+                m.normalized_name % :query_name OR
+                m.full_description % :query_desc
             )
-            -- 启用状态过滤
-            AND enable_state = 2
-            -- 相似度阈值过滤
+            -- 相似度阈值过滤（分类权重为0，不影响计算）
             AND (
-                {w_name} * similarity(normalized_name, :query_name) +
-                {w_desc} * similarity(full_description, :query_desc) +
-                {w_attr} * {attr_similarity_sql} +
-                {w_cat} * CASE 
-                    WHEN detected_category = :query_category 
-                    THEN 1.0 
-                    ELSE 0.0 
-                END
+                {w_name} * similarity(m.normalized_name, :query_name) +
+                {w_desc} * similarity(m.full_description, :query_desc) +
+                {w_attr} * {attr_similarity_sql}
             ) >= :min_similarity
         ORDER BY similarity_score DESC
         LIMIT :limit;
@@ -383,8 +400,11 @@ class SimilarityCalculator:
             material_name=row.material_name or '',
             specification=row.specification or '',
             model=row.model or '',
+            unit_name=row.unit_name or '',
+            category_name=row.category_name or '',
+            enable_state=row.enable_state if hasattr(row, 'enable_state') else None,
+            full_description=row.full_description or '',
             normalized_name=row.normalized_name,
-            full_description=row.full_description,
             attributes=row.attributes or {},
             detected_category=row.detected_category,
             category_confidence=float(row.category_confidence) if row.category_confidence else 0.0,

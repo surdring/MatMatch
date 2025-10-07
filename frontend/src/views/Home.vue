@@ -7,27 +7,41 @@
             <el-icon :size="32" color="#409eff"><Grid /></el-icon>
             <span class="logo-text">MatMatch</span>
           </div>
-          <el-menu mode="horizontal" :default-active="activeMenu" @select="handleMenuSelect">
-            <el-menu-item index="home">首页</el-menu-item>
-            <el-menu-item index="search">物料查重</el-menu-item>
-            <el-menu-item index="admin">管理后台</el-menu-item>
-          </el-menu>
+          <div class="nav-buttons">
+            <el-button 
+              :type="activeMenu === 'home' ? 'primary' : ''"
+              text
+              @click="handleMenuSelect('home')"
+            >
+              首页
+            </el-button>
+            <el-button 
+              :type="activeMenu === 'search' ? 'primary' : ''"
+              text
+              @click="handleMenuSelect('search')"
+            >
+              物料查重
+            </el-button>
+            <el-button 
+              :type="activeMenu === 'admin' ? 'primary' : ''"
+              text
+              @click="handleMenuSelect('admin')"
+            >
+              管理后台
+            </el-button>
+          </div>
         </div>
       </el-header>
 
       <el-main>
         <div class="hero-section">
-          <h1 class="hero-title">智能物料查重系统</h1>
-          <p class="hero-subtitle">基于AI的物料描述标准化与智能匹配</p>
+          <h1 class="hero-title">物料查重系统</h1>
+          <p class="hero-subtitle">物料描述标准化与相似度匹配</p>
           
           <div class="hero-actions">
             <el-button type="primary" size="large" @click="goToSearch">
               <el-icon><Upload /></el-icon>
               开始查重
-            </el-button>
-            <el-button size="large" @click="checkHealth">
-              <el-icon><Checked /></el-icon>
-              系统状态
             </el-button>
           </div>
         </div>
@@ -39,7 +53,7 @@
                 <template #header>
                   <el-icon :size="40" color="#409eff"><DataAnalysis /></el-icon>
                 </template>
-                <h3>智能标准化</h3>
+                <h3>自动标准化</h3>
                 <p>自动识别物料类别，标准化物料描述，提取关键属性</p>
               </el-card>
             </el-col>
@@ -66,30 +80,30 @@
           </el-row>
         </div>
 
-        <div class="stats-section">
+        <div class="stats-section" v-loading="statsLoading">
           <el-row :gutter="20">
             <el-col :xs="12" :sm="6">
               <div class="stat-item">
-                <div class="stat-value">168K+</div>
+                <div class="stat-value">{{ formatNumber(stats.totalMaterials) }}</div>
                 <div class="stat-label">物料数据</div>
               </div>
             </el-col>
             <el-col :xs="12" :sm="6">
               <div class="stat-item">
-                <div class="stat-value">2,523</div>
+                <div class="stat-value">{{ formatNumber(stats.totalCategories) }}</div>
                 <div class="stat-label">物料分类</div>
               </div>
             </el-col>
             <el-col :xs="12" :sm="6">
               <div class="stat-item">
-                <div class="stat-value">91.2%</div>
-                <div class="stat-label">匹配精度</div>
+                <div class="stat-value">{{ formatNumber(stats.totalSynonyms) }}</div>
+                <div class="stat-label">同义词库</div>
               </div>
             </el-col>
             <el-col :xs="12" :sm="6">
               <div class="stat-item">
-                <div class="stat-value">&lt;500ms</div>
-                <div class="stat-label">查询响应</div>
+                <div class="stat-value">{{ stats.totalRules }}</div>
+                <div class="stat-label">提取规则</div>
               </div>
             </el-col>
           </el-row>
@@ -98,7 +112,7 @@
 
       <el-footer height="60px">
         <div class="footer-content">
-          <p>&copy; 2025 MatMatch - 智能物料查重系统</p>
+          <p>&copy; 2025 MatMatch - 物料查重系统</p>
         </div>
       </el-footer>
     </el-container>
@@ -106,13 +120,49 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { materialApi } from '@/api'
+import http from '@/api/request'
 
 const router = useRouter()
 const activeMenu = ref('home')
+
+// 统计数据
+const statsLoading = ref(false)
+const stats = ref({
+  totalMaterials: 0,
+  totalCategories: 0,
+  totalSynonyms: 0,
+  totalRules: 0
+})
+
+// 格式化数字显示
+const formatNumber = (num: number): string => {
+  if (num >= 10000) {
+    return `${(num / 10000).toFixed(1)}万`
+  }
+  return num.toLocaleString()
+}
+
+// 获取统计数据
+const fetchStats = async () => {
+  statsLoading.value = true
+  try {
+    const response = await http.get('/api/v1/materials/stats')
+    stats.value = {
+      totalMaterials: response.data.total_materials || 0,
+      totalCategories: response.data.total_categories || 0,
+      totalSynonyms: response.data.total_synonyms || 0,
+      totalRules: response.data.total_rules || 0
+    }
+  } catch (error: any) {
+    console.error('获取统计信息失败:', error)
+    ElMessage.warning('获取统计信息失败，显示默认数据')
+  } finally {
+    statsLoading.value = false
+  }
+}
 
 const handleMenuSelect = (index: string) => {
   activeMenu.value = index
@@ -127,25 +177,24 @@ const goToSearch = () => {
   router.push('/search')
 }
 
-const checkHealth = async () => {
-  try {
-    const response = await materialApi.healthCheck()
-    ElMessage.success(`系统运行正常 - 数据库: ${response.data.database}`)
-  } catch (error) {
-    ElMessage.error('系统健康检查失败')
-  }
-}
+// 页面加载时获取统计数据
+onMounted(() => {
+  fetchStats()
+})
 </script>
 
 <style scoped lang="scss">
 .home-container {
   width: 100%;
-  height: 100%;
+  min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  overflow-x: hidden;
 }
 
 .el-container {
-  height: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .el-header {
@@ -173,29 +222,43 @@ const checkHealth = async () => {
   color: #409eff;
 }
 
+.nav-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .el-button {
+    font-size: 16px;
+    font-weight: 500;
+  }
+}
+
 .el-main {
+  flex: 1;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 60px 20px;
+  padding: 40px 20px;
+  width: 100%;
+  overflow-y: auto;
 }
 
 .hero-section {
   text-align: center;
-  margin-bottom: 80px;
+  margin-bottom: 50px;
 }
 
 .hero-title {
-  font-size: 48px;
+  font-size: 42px;
   font-weight: 700;
   color: #fff;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .hero-subtitle {
-  font-size: 20px;
+  font-size: 18px;
   color: rgba(255, 255, 255, 0.9);
-  margin-bottom: 40px;
+  margin-bottom: 30px;
 }
 
 .hero-actions {
@@ -205,7 +268,7 @@ const checkHealth = async () => {
 }
 
 .features-section {
-  margin-bottom: 60px;
+  margin-bottom: 40px;
 }
 
 .feature-card {
@@ -255,6 +318,7 @@ const checkHealth = async () => {
 .el-footer {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
+  flex-shrink: 0;
 }
 
 .footer-content {

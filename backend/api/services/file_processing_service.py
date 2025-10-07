@@ -83,6 +83,7 @@ class FileProcessingService:
         name_column: Optional[str] = None,
         spec_column: Optional[str] = None,
         unit_column: Optional[str] = None,
+        category_column: Optional[str] = None,
         top_k: int = 10
     ) -> BatchSearchResponse:
         """
@@ -93,6 +94,7 @@ class FileProcessingService:
             name_column: 名称列（None时自动检测）
             spec_column: 规格列（None时自动检测）
             unit_column: 单位列（None时自动检测）
+            category_column: 分类列（None时自动检测，可选）
             top_k: 返回Top-K相似物料
             
         Returns:
@@ -106,35 +108,62 @@ class FileProcessingService:
         """
         start_time = time.time()
         
-        # 1. 文件验证
-        self._validate_file(file)
-        
-        # 2. 读取Excel
-        df = await self._read_excel(file)
-        
-        # 3. 列名检测
-        available_columns = df.columns.tolist()
-        detected_columns_dict = detect_required_columns(
-            available_columns,
-            name_column,
-            spec_column,
-            unit_column
-        )
-        
-        detected_columns = DetectedColumns(
-            name=detected_columns_dict["name"],
-            spec=detected_columns_dict["spec"],
-            unit=detected_columns_dict["unit"]
-        )
-        
-        logger.info(f"Detected columns: name={detected_columns.name}, spec={detected_columns.spec}, unit={detected_columns.unit}")
-        
-        # 4. 批量处理
-        results, errors, skipped_rows = await self._process_rows(
-            df,
-            detected_columns,
-            top_k
-        )
+        try:
+            logger.info(f"=" * 80)
+            logger.info(f"开始处理批量查重文件: {file.filename}")
+            logger.info(f"文件大小: {file.size} bytes")
+            logger.info(f"=" * 80)
+            
+            # 1. 文件验证
+            logger.debug("步骤1: 验证文件...")
+            self._validate_file(file)
+            logger.info("✅ 文件验证通过")
+            
+            # 2. 读取Excel
+            logger.debug("步骤2: 读取Excel...")
+            df = await self._read_excel(file)
+            logger.info(f"✅ Excel读取成功，共 {len(df)} 行")
+            
+            # 3. 列名检测
+            logger.debug("步骤3: 检测列名...")
+            available_columns = df.columns.tolist()
+            logger.debug(f"可用列: {available_columns}")
+            
+            detected_columns_dict = detect_required_columns(
+                available_columns,
+                name_column,
+                spec_column,
+                unit_column,
+                category_column  # 添加分类列检测
+            )
+            
+            detected_columns = DetectedColumns(
+                name=detected_columns_dict["name"],
+                spec=detected_columns_dict["spec"],
+                unit=detected_columns_dict["unit"]
+            )
+            
+            # 分类列是可选的
+            category_col = detected_columns_dict.get("category")
+            
+            logger.info(
+                f"✅ 列名检测完成: name={detected_columns.name}, spec={detected_columns.spec}, "
+                f"unit={detected_columns.unit}, category={category_col}"
+            )
+            
+            # 4. 批量处理
+            logger.info(f"步骤4: 开始批量处理 {len(df)} 条数据...")
+            results, errors, skipped_rows = await self._process_rows(
+                df,
+                detected_columns,
+                top_k,
+                category_col  # 传递分类列名
+            )
+            logger.info(f"✅ 批量处理完成: 成功{len(results)}条, 错误{len(errors)}条, 跳过{len(skipped_rows)}条")
+            
+        except Exception as e:
+            logger.error(f"❌ 批量查重处理失败: {str(e)}", exc_info=True)
+            raise
         
         # 5. 计算统计信息
         processing_time = time.time() - start_time
@@ -247,7 +276,8 @@ class FileProcessingService:
         self,
         df: pd.DataFrame,
         detected_columns: DetectedColumns,
-        top_k: int
+        top_k: int,
+        category_column: Optional[str] = None
     ) -> Tuple[List[BatchSearchResultItem], List[BatchSearchErrorItem], List[SkippedRowItem]]:
         """
         处理Excel行数据
@@ -256,6 +286,7 @@ class FileProcessingService:
             df: Excel数据
             detected_columns: 检测到的列名
             top_k: 返回Top-K相似物料
+            category_column: 分类列名（可选）
             
         Returns:
             (results, errors, skipped_rows)
@@ -264,14 +295,26 @@ class FileProcessingService:
         errors: List[BatchSearchErrorItem] = []
         skipped_rows: List[SkippedRowItem] = []
         
+        total_rows = len(df)
+        logger.info(f"开始逐行处理，总计 {total_rows} 行")
+        
         for idx, row in df.iterrows():
             row_number = int(idx) + 2  # Excel行号从2开始（1是表头）
+            
+            # 每10行记录一次进度
+            if row_number % 10 == 0:
+                logger.info(f"处理进度: {row_number-1}/{total_rows} ({(row_number-1)/total_rows*100:.1f}%)")
             
             try:
                 # 提取3个必需字段
                 name = self._get_cell_value(row, detected_columns.name)
                 spec = self._get_cell_value(row, detected_columns.spec)
                 unit = self._get_cell_value(row, detected_columns.unit)
+                
+                # 提取可选的分类字段
+                category = None
+                if category_column:
+                    category = self._get_cell_value(row, category_column)
                 
                 # 验证必需字段
                 if not name or not spec:
@@ -285,9 +328,12 @@ class FileProcessingService:
                 # 组合描述
                 combined_description = f"{name} {spec}".strip()
                 
-                # 处理查询
+                # 处理查询（传入原始name、spec和unit用于清洗）
                 parsed_query = await self.processor.process_material_description(
-                    combined_description
+                    description=combined_description,
+                    raw_name=name,
+                    raw_spec=spec,
+                    raw_unit=unit
                 )
                 
                 # 查找相似物料
@@ -337,6 +383,7 @@ class FileProcessingService:
                     name=name,
                     spec=spec,
                     unit=unit,
+                    category=category,  # 添加分类字段
                     original_row=row.to_dict()
                 )
                 
@@ -352,7 +399,8 @@ class FileProcessingService:
                 results.append(result_item)
                 
             except Exception as e:
-                logger.error(f"Failed to process row {row_number}: {str(e)}")
+                logger.error(f"❌ 处理第 {row_number} 行失败: {str(e)}", exc_info=True)
+                logger.debug(f"错误详情: 类型={type(e).__name__}, 行内容={row.to_dict()}")
                 errors.append(BatchSearchErrorItem(
                     row_number=row_number,
                     input_description=f"{name} {spec}" if 'name' in locals() else "未知",

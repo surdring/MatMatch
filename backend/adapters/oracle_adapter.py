@@ -11,9 +11,9 @@
 - 错误处理和日志记录
 
 不包含：
-- ❌ 业务查询逻辑（由上层调用者提供SQL）
-- ❌ 字段映射和数据处理
-- ❌ ETL业务逻辑
+- [FAIL] 业务查询逻辑（由上层调用者提供SQL）
+- [FAIL] 字段映射和数据处理
+- [FAIL] ETL业务逻辑
 """
 
 import asyncio
@@ -45,7 +45,7 @@ class MaterialRecord(NamedTuple):
 try:
     oracledb.init_oracle_client()
     logger_init = logging.getLogger(__name__)
-    logger_init.info("✅ Oracle thick模式初始化成功")
+    logger_init.info("[OK] Oracle thick模式初始化成功")
 except Exception as e:
     # 如果已经初始化过或不需要thick模式，忽略错误
     pass
@@ -107,7 +107,7 @@ class QueryCache:
             self._access_order.remove(key)
         self._access_order.append(key)
         
-        logger.debug(f"🎯 缓存命中: {key[:8]}...")
+        logger.debug(f" 缓存命中: {key[:8]}...")
         return value
     
     def set(self, query: str, params: Optional[Dict], value: Any) -> None:
@@ -176,18 +176,18 @@ def async_retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0)
                     last_exception = e
                     if attempt < max_attempts:
                         logger.warning(
-                            f"⚠️ {func.__name__} 第{attempt}次尝试失败: {str(e)}, "
+                            f"[WARN] {func.__name__} 第{attempt}次尝试失败: {str(e)}, "
                             f"{current_delay:.1f}秒后重试..."
                         )
                         await asyncio.sleep(current_delay)
                         current_delay *= backoff
                     else:
                         logger.error(
-                            f"❌ {func.__name__} 重试{max_attempts}次后仍然失败"
+                            f"[FAIL] {func.__name__} 重试{max_attempts}次后仍然失败"
                         )
                 except Exception as e:
                     # 其他异常不重试，直接抛出
-                    logger.error(f"❌ {func.__name__} 发生不可重试的异常: {str(e)}")
+                    logger.error(f"[FAIL] {func.__name__} 发生不可重试的异常: {str(e)}")
                     raise
             
             # 所有重试都失败，抛出最后一个异常
@@ -246,9 +246,9 @@ class OracleConnectionAdapter:
     - 支持异步查询包装
     
     不包含：
-    - ❌ 业务查询逻辑（由上层调用者提供SQL）
-    - ❌ 字段映射逻辑
-    - ❌ 数据处理逻辑
+    - [FAIL] 业务查询逻辑（由上层调用者提供SQL）
+    - [FAIL] 字段映射逻辑
+    - [FAIL] 数据处理逻辑
     
     使用示例：
         # 基本用法
@@ -292,7 +292,7 @@ class OracleConnectionAdapter:
         self._enable_cache = enable_cache
         self._query_cache = QueryCache(max_size=1000, ttl=cache_ttl) if enable_cache else None
         
-        logger.info("🔧 轻量级Oracle连接适配器初始化完成")
+        logger.info(" 轻量级Oracle连接适配器初始化完成")
         if enable_cache:
             logger.info(f"💾 查询缓存已启用 (TTL: {cache_ttl}秒)")
     
@@ -323,7 +323,7 @@ class OracleConnectionAdapter:
                     max=10,
                     increment=1
                 )
-                logger.info("✅ Oracle连接池创建成功")
+                logger.info("[OK] Oracle连接池创建成功")
             else:
                 # 单连接模式
                 self._connection = await asyncio.to_thread(
@@ -332,17 +332,17 @@ class OracleConnectionAdapter:
                     password=self.config.password,
                     dsn=self.config.dsn
                 )
-                logger.info("✅ Oracle连接成功")
+                logger.info("[OK] Oracle连接成功")
             
             return True
             
         except oracledb.DatabaseError as e:
             error_msg = f"Oracle连接失败: {str(e)}"
-            logger.error(f"❌ {error_msg}")
+            logger.error(f"[FAIL] {error_msg}")
             raise OracleConnectionError(error_msg) from e
         except Exception as e:
             error_msg = f"连接过程发生未知错误: {str(e)}"
-            logger.error(f"❌ {error_msg}")
+            logger.error(f"[FAIL] {error_msg}")
             raise OracleConnectionError(error_msg) from e
     
     async def disconnect(self) -> None:
@@ -353,13 +353,13 @@ class OracleConnectionAdapter:
             if self._connection_pool:
                 await asyncio.to_thread(self._connection_pool.close)
                 self._connection_pool = None
-                logger.info("✅ Oracle连接池已关闭")
+                logger.info("[OK] Oracle连接池已关闭")
             elif self._connection:
                 await asyncio.to_thread(self._connection.close)
                 self._connection = None
-                logger.info("✅ Oracle连接已关闭")
+                logger.info("[OK] Oracle连接已关闭")
         except Exception as e:
-            logger.error(f"⚠️ 关闭连接时发生错误: {str(e)}")
+            logger.error(f"[WARN] 关闭连接时发生错误: {str(e)}")
     
     def get_connection(self) -> Optional[oracledb.Connection]:
         """
@@ -392,7 +392,7 @@ class OracleConnectionAdapter:
             return len(result) > 0
             
         except Exception as e:
-            logger.error(f"❌ 连接验证失败: {str(e)}")
+            logger.error(f"[FAIL] 连接验证失败: {str(e)}")
             return False
     
     # ========================================================================
@@ -408,8 +408,8 @@ class OracleConnectionAdapter:
         """
         执行查询（通用方法）
         
-        ✅ 提供基础的查询执行能力
-        ❌ 不包含具体的业务查询逻辑
+        [OK] 提供基础的查询执行能力
+        [FAIL] 不包含具体的业务查询逻辑
         
         Args:
             query: SQL查询语句（由调用者提供）
@@ -434,7 +434,7 @@ class OracleConnectionAdapter:
         if use_cache and self._enable_cache:
             cached_result = self._query_cache.get(query, params)
             if cached_result is not None:
-                logger.debug(f"🎯 返回缓存结果（{len(cached_result)}条）")
+                logger.debug(f" 返回缓存结果（{len(cached_result)}条）")
                 return cached_result
         
         # 确保连接已建立
@@ -467,7 +467,7 @@ class OracleConnectionAdapter:
                 # 转换为字典列表
                 result = [dict(zip(columns, row)) for row in rows]
                 
-                logger.debug(f"✅ 查询成功，返回 {len(result)} 条记录")
+                logger.debug(f"[OK] 查询成功，返回 {len(result)} 条记录")
                 
                 # 缓存结果
                 if use_cache and self._enable_cache:
@@ -484,11 +484,11 @@ class OracleConnectionAdapter:
         
         except oracledb.DatabaseError as e:
             error_msg = f"查询执行失败: {str(e)}"
-            logger.error(f"❌ {error_msg}\nSQL: {query[:100]}...")
+            logger.error(f"[FAIL] {error_msg}\nSQL: {query[:100]}...")
             raise QueryExecutionError(error_msg) from e
         except Exception as e:
             error_msg = f"查询过程发生未知错误: {str(e)}"
-            logger.error(f"❌ {error_msg}")
+            logger.error(f"[FAIL] {error_msg}")
             raise QueryExecutionError(error_msg) from e
     
     async def execute_query_generator(
@@ -500,8 +500,8 @@ class OracleConnectionAdapter:
         """
         流式执行查询（用于大数据量）
         
-        ✅ 提供流式查询能力
-        ❌ 不包含具体的业务查询逻辑
+        [OK] 提供流式查询能力
+        [FAIL] 不包含具体的业务查询逻辑
         
         Args:
             query: SQL查询语句（由调用者提供）
@@ -552,11 +552,11 @@ class OracleConnectionAdapter:
                     batch = [dict(zip(columns, row)) for row in rows]
                     total_fetched += len(batch)
                     
-                    logger.debug(f"📦 流式查询返回批次：{len(batch)}条（累计{total_fetched}条）")
+                    logger.debug(f" 流式查询返回批次：{len(batch)}条（累计{total_fetched}条）")
                     
                     yield batch
                 
-                logger.info(f"✅ 流式查询完成，共返回 {total_fetched} 条记录")
+                logger.info(f"[OK] 流式查询完成，共返回 {total_fetched} 条记录")
                 
             finally:
                 await asyncio.to_thread(cursor.close)
@@ -567,11 +567,11 @@ class OracleConnectionAdapter:
         
         except oracledb.DatabaseError as e:
             error_msg = f"流式查询执行失败: {str(e)}"
-            logger.error(f"❌ {error_msg}\nSQL: {query[:100]}...")
+            logger.error(f"[FAIL] {error_msg}\nSQL: {query[:100]}...")
             raise QueryExecutionError(error_msg) from e
         except Exception as e:
             error_msg = f"流式查询过程发生未知错误: {str(e)}"
-            logger.error(f"❌ {error_msg}")
+            logger.error(f"[FAIL] {error_msg}")
             raise QueryExecutionError(error_msg) from e
     
     # ========================================================================
@@ -589,7 +589,7 @@ class OracleConnectionAdapter:
         if self._query_cache:
             self._query_cache.clear()
         else:
-            logger.warning("⚠️ 查询缓存未启用")
+            logger.warning("[WARN] 查询缓存未启用")
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """
@@ -643,4 +643,4 @@ class OracleConnectionAdapter:
 # 保留旧名称以便渐进式迁移
 OracleDataSourceAdapter = OracleConnectionAdapter
 
-logger.info("✅ 轻量级Oracle连接适配器模块加载完成")
+logger.info("[OK] 轻量级Oracle连接适配器模块加载完成")

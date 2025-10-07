@@ -9,6 +9,7 @@ import logging
 import time
 from typing import Optional
 from math import ceil
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, UploadFile, Form, Query, status
 from fastapi.responses import JSONResponse
@@ -106,6 +107,7 @@ async def batch_search_materials(
     name_column: Optional[str] = Form(None, description="物料名称列（None时自动检测）"),
     spec_column: Optional[str] = Form(None, description="规格型号列（None时自动检测）"),
     unit_column: Optional[str] = Form(None, description="单位列（None时自动检测）"),
+    category_column: Optional[str] = Form(None, description="分类列（None时自动检测，可选）"),
     top_k: int = Form(10, ge=1, le=50, description="返回Top-K相似物料"),
     db: AsyncSession = Depends(get_db)
 ) -> BatchSearchResponse:
@@ -117,6 +119,7 @@ async def batch_search_materials(
         name_column: 名称列（可选）
         spec_column: 规格列（可选）
         unit_column: 单位列（可选）
+        category_column: 分类列（可选）
         top_k: Top-K结果数
         db: 数据库会话
         
@@ -128,7 +131,8 @@ async def batch_search_materials(
     """
     logger.info(
         f"Batch search request received: file={file.filename}, "
-        f"name_column={name_column}, spec_column={spec_column}, unit_column={unit_column}, top_k={top_k}"
+        f"name_column={name_column}, spec_column={spec_column}, unit_column={unit_column}, "
+        f"category_column={category_column}, top_k={top_k}"
     )
     
     try:
@@ -141,6 +145,7 @@ async def batch_search_materials(
             name_column=name_column,
             spec_column=spec_column,
             unit_column=unit_column,
+            category_column=category_column,
             top_k=top_k
         )
         
@@ -226,6 +231,64 @@ async def batch_search_materials(
 
 
 # ========== 新增API端点 ==========
+
+@router.get(
+    "/stats",
+    status_code=status.HTTP_200_OK,
+    summary="获取系统统计信息",
+    description="获取物料总数、分类总数等统计信息"
+)
+async def get_system_stats(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取系统统计信息
+    
+    Returns:
+        dict: 包含物料总数、分类总数等统计信息
+    """
+    from sqlalchemy import text
+    
+    try:
+        # 获取物料总数
+        result = await db.execute(text('SELECT COUNT(*) FROM materials_master'))
+        total_materials = result.scalar()
+        
+        # 获取分类总数（从Oracle同步的分类表）
+        result = await db.execute(text('SELECT COUNT(DISTINCT oracle_category_id) FROM materials_master WHERE oracle_category_id IS NOT NULL'))
+        total_categories = result.scalar()
+        
+        # 获取知识库统计
+        try:
+            result = await db.execute(text('SELECT COUNT(*) FROM synonyms'))
+            total_synonyms = result.scalar()
+        except:
+            total_synonyms = 0
+        
+        try:
+            result = await db.execute(text('SELECT COUNT(*) FROM extraction_rules'))
+            total_rules = result.scalar()
+        except:
+            total_rules = 0
+        
+        return {
+            "total_materials": total_materials or 0,
+            "total_categories": total_categories or 0,
+            "total_synonyms": total_synonyms or 0,
+            "total_rules": total_rules or 0,
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting system stats: {str(e)}", exc_info=True)
+        # 返回默认值而不是错误，避免影响首页加载
+        return {
+            "total_materials": 0,
+            "total_categories": 0,
+            "total_synonyms": 0,
+            "total_rules": 0,
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        }
+
 
 @router.get(
     "/{erp_code}",

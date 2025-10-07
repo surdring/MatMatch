@@ -150,7 +150,7 @@ class SimpleMaterialProcessor:
                 }
                 for rule in rules
             ]
-            logger.info(f"✅ Loaded {len(self.extraction_rules)} extraction rules")
+            logger.info(f"[OK] Loaded {len(self.extraction_rules)} extraction rules")
             
             # 2. 加载同义词
             stmt = select(Synonym).where(Synonym.is_active == True)
@@ -161,7 +161,7 @@ class SimpleMaterialProcessor:
                 syn.original_term: syn.standard_term
                 for syn in synonyms
             }
-            logger.info(f"✅ Loaded {len(self.synonyms)} synonyms")
+            logger.info(f"[OK] Loaded {len(self.synonyms)} synonyms")
             
             # 3. 加载分类关键词
             stmt = select(KnowledgeCategory).where(KnowledgeCategory.is_active == True)
@@ -172,7 +172,7 @@ class SimpleMaterialProcessor:
                 cat.category_name: cat.keywords
                 for cat in categories
             }
-            logger.info(f"✅ Loaded {len(self.category_keywords)} categories")
+            logger.info(f"[OK] Loaded {len(self.category_keywords)} categories")
             
             self._knowledge_base_loaded = True
             logger.info("Knowledge base loaded successfully")
@@ -242,14 +242,14 @@ class SimpleMaterialProcessor:
                 oracle_unit_id=data.get('oracle_unit_id'),
                 oracle_org_id=data.get('oracle_org_id'),
                 
-                # JOIN获取的关联名称
-                # 注意: 这些字段需要确认是否在MaterialsMaster模型中存在
-                # category_name=data.get('category_name'),
-                # unit_name=data.get('unit_name'),
+                # JOIN获取的关联名称（反规范化设计）
+                # ETL管道在Oracle端JOIN获取，直接存储到materials_master表
+                category_name=data.get('category_name'),
+                unit_name=data.get('unit_name'),
                 
-                # 对称处理输出 ⭐⭐⭐
+                # 对称处理输出 
                 normalized_name=normalized_name,
-                full_description=full_description,
+                full_description=standardized_text,  # 使用清洗+同义词替换后的文本
                 attributes=attributes,
                 detected_category=detected_category,
                 category_confidence=float(confidence),
@@ -338,8 +338,9 @@ class SimpleMaterialProcessor:
         
         算法:
             1. 全角转半角（76个字符对）
-            2. 去除多余空格
-            3. 统一大小写（品牌名保留）
+            2. 统一规格分隔符（基于实际数据分析）
+            3. 去除多余空格
+            4. 统一大小写（品牌名保留）
         """
         if not text:
             return ''
@@ -347,13 +348,93 @@ class SimpleMaterialProcessor:
         # 1. 全角转半角
         normalized = ''.join(self._fullwidth_map.get(c, c) for c in text)
         
-        # 2. 去除多余空格
+        # 2. 统一规格分隔符（基于实际ERP数据分析）
+        normalized = self._normalize_spec_separators(normalized)
+        
+        # 3. 去除多余空格
         normalized = ' '.join(normalized.split())
         
-        # 3. 品牌名保留大小写（这里简化处理）
+        # 4. 品牌名保留大小写（这里简化处理）
         # 未来可以添加品牌名识别和大小写保留逻辑
         
         return normalized
+    
+    def _normalize_spec_separators(self, text: str) -> str:
+        """
+        统一规格型号分隔符（智能增强版 v2.1）
+        
+        基于实际ERP数据分析（230,421条物料，1000条深度验证），共13类标准化规则：
+        
+        0. 希腊字母标准化 (φ/Φ/Ф/δ/Δ → phi/PHI/delta/DELTA)
+        1. 全角符号转半角 (（）：＞＜％ → ():<>%)
+        2. 数学符号标准化 (≥≧≤℃㎡ → >=/<=//C/m2)
+        3. 去除所有空格 (提升匹配精度，M8 20 → M820)
+        4. 乘号类统一 (*×·•・ → _)
+        5. 数字间x/X处理 (200x100 → 200_100)
+        6. 斜杠类统一 (/／\ → _)
+        7. 逗号类统一 (,，、 → _)
+        8. 换行符处理 (\n → _)
+        9. 连字符智能处理 (保留数字范围如10-50)
+        10. 统一转小写 (M8X20 → m8_20, 提升匹配精度)
+        11. 小数点.0优化 (3.0 → 3, 保留3.5)
+        12. 清理连续下划线及首尾下划线
+        
+        Args:
+            text: 输入文本
+            
+        Returns:
+            标准化后的文本
+        """
+        # === 规则0: 希腊字母标准化（优先处理） ===
+        text = text.replace('φ', 'phi').replace('Φ', 'PHI').replace('Ф', 'PHI')  # 直径符号
+        text = text.replace('δ', 'delta').replace('Δ', 'DELTA')  # 厚度/增量符号
+        
+        # === 规则1: 全角符号转半角 ===
+        fullwidth_map = {'（': '(', '）': ')', '：': ':', '＞': '>', '＜': '<', '％': '%'}
+        for fw, hw in fullwidth_map.items():
+            text = text.replace(fw, hw)
+        
+        # === 规则2: 数学符号标准化 ===
+        text = text.replace('≥', '>=').replace('≧', '>=').replace('≤', '<=').replace('≦', '<=')
+        text = text.replace('℃', 'C').replace('℉', 'F')  # 温度
+        text = text.replace('㎡', 'm2').replace('㎜', 'mm').replace('㎝', 'cm').replace('㎞', 'km')  # 单位
+        
+        # === 规则3: 去除所有空格（提升匹配精度） ===
+        text = text.replace('\u3000', '')  # 全角空格
+        text = text.replace(' ', '')  # 半角空格
+        
+        # === 规则4: 乘号类统一为下划线 ===
+        text = re.sub(r'[*×·•・]', '_', text)
+        
+        # === 规则5: 处理 x/X 作为乘号（仅在数字间） ===
+        text = re.sub(r'(?<=\d)[xX](?=\d)', '_', text)
+        
+        # === 规则6: 斜杠类统一为下划线 ===
+        text = re.sub(r'[/／\\]', '_', text)
+        
+        # === 规则7: 逗号和顿号统一为下划线 ===
+        text = re.sub(r'[,，、]', '_', text)
+        
+        # === 规则8: 换行符统一为下划线 ===
+        text = text.replace('\n', '_')
+        
+        # === 规则9: 连字符的智能处理（保留数字范围） ===
+        def replace_hyphen(match):
+            before, hyphen, after = match.group(1), match.group(2), match.group(3)
+            return f"{before}{hyphen}{after}" if before.isdigit() and after.isdigit() else f"{before}_{after}"
+        text = re.sub(r'(.)([-–—])(.)', replace_hyphen, text)
+        
+        # === 规则10: 统一转小写（提升匹配精度） ===
+        text = text.lower()
+        
+        # === 规则11: 去除无意义的小数点0 ===
+        text = re.sub(r'(\d+)\.0+(?=\D|_|$)', r'\1', text)
+        
+        # === 规则12: 清理多余下划线 ===
+        text = re.sub(r'_+', '_', text)  # 合并连续
+        text = re.sub(r'^_|_$', '', text)  # 去除首尾
+        
+        return text
     
     def _apply_synonyms(self, text: str) -> str:
         """

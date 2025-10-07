@@ -24,6 +24,25 @@ class ParsedQuery(BaseModel):
         examples=["六角螺栓 M8*20 304"]
     )
     
+    # 新增：清洗后的单独字段（用于前端精确对比）
+    cleaned_name: Optional[str] = Field(
+        None,
+        description="清洗后的物料名称（应用13条标准化规则后）",
+        examples=["六角螺栓", "不锈钢管", "挡液圈"]
+    )
+    
+    cleaned_spec: Optional[str] = Field(
+        None,
+        description="清洗后的规格型号（应用13条标准化规则后）",
+        examples=["m8_20", "dn50", "phi100_200"]
+    )
+    
+    cleaned_unit: Optional[str] = Field(
+        None,
+        description="清洗后的单位（去除空格、统一大小写）",
+        examples=["个", "米", "套"]
+    )
+    
     attributes: Dict[str, str] = Field(
         default_factory=dict,
         description="提取的结构化属性",
@@ -158,6 +177,19 @@ class MaterialResult(BaseModel):
         examples=["个"]
     )
     
+    # === ERP状态字段 ===
+    enable_state: Optional[int] = Field(
+        None,
+        description="启用状态 (1=未启用，2=已启用，3=已停用)",
+        examples=[2]
+    )
+    
+    full_description: Optional[str] = Field(
+        None,
+        description="完整描述（name + spec + model组合）",
+        examples=["六角螺栓 M8*20 304"]
+    )
+    
     # === 查重相关字段 ===
     similarity_score: float = Field(
         ...,
@@ -165,6 +197,39 @@ class MaterialResult(BaseModel):
         le=1.0,
         description="相似度得分 (0-1)",
         examples=[0.92]
+    )
+    
+    # === 细分相似度字段 ===
+    name_similarity: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="名称相似度 (0-1)",
+        examples=[0.95]
+    )
+    
+    description_similarity: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="描述相似度 (0-1)",
+        examples=[0.88]
+    )
+    
+    attributes_similarity: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="属性相似度 (0-1)",
+        examples=[0.75]
+    )
+    
+    category_similarity: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="分类相似度 (0-1)",
+        examples=[1.0]
     )
     
     normalized_name: str = Field(

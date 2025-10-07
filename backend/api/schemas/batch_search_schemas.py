@@ -54,11 +54,12 @@ class InputData(BaseModel):
     """
     输入数据项
     
-    包含从Excel读取的3个必需字段
+    包含从Excel读取的必需字段和可选字段
     """
     name: str = Field(..., description="物料名称")
     spec: str = Field(..., description="规格型号")
     unit: Optional[str] = Field(None, description="单位")
+    category: Optional[str] = Field(None, description="用户输入的分类（可选）")
     original_row: Dict[str, Any] = Field(
         default_factory=dict,
         description="原始Excel行数据（包含所有列）"

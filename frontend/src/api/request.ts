@@ -13,7 +13,7 @@ export interface ApiResponse<T = any> {
 // 创建 axios 实例
 const service: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
-  timeout: 30000,
+  timeout: 120000, // 增加到120秒，处理大批量数据
   headers: {
     'Content-Type': 'application/json'
   }
@@ -52,6 +52,18 @@ service.interceptors.response.use(
     // 调试信息
     if (import.meta.env.VITE_SHOW_DEBUG === 'true') {
       console.log('[Response]', response.config.url, res)
+    }
+
+    // 如果后端直接返回数据（没有 success 字段），包装成标准格式
+    if (res.success === undefined) {
+      // 特殊API：批量查重、统计信息等直接返回数据
+      if (res.total_processed !== undefined || res.total_materials !== undefined) {
+        return {
+          success: true,
+          data: res,
+          message: 'success'
+        } as ApiResponse
+      }
     }
 
     // 处理成功响应

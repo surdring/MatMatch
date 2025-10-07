@@ -1,11 +1,11 @@
-# 技术设计文档: 智能物料查重工具
+# 技术设计文档: 物料查重工具
 
 **版本:** 2.0
 **状态:** 正式版
 **关联需求:** `specs/main/requirements.md` (v2.1)
 
 ## 1. 概述
-本设计文档基于已批准的需求规格说明书v2.1，详细阐述了如何构建一个支持**全品类工业物料**的智能查重工具。系统采用"对称处理"的核心设计原则，通过Python/FastAPI后端、Vue.js前端、PostgreSQL数据库和Oracle数据源的组合，实现高效、准确、可扩展的物料查重服务。
+本设计文档基于已批准的需求规格说明书v2.1，详细阐述了如何构建一个支持**全品类工业物料**的查重工具。系统采用"对称处理"的核心设计原则，通过Python/FastAPI后端、Vue.js前端、PostgreSQL数据库和Oracle数据源的组合，实现高效、准确、可扩展的物料查重服务。
 
 ### 🎯 已完成核心基础设施
 基于**230,421条Oracle真实物料数据**，项目已完成以下关键基础设施建设：
@@ -18,7 +18,7 @@
 ### 核心架构特点：
 - **全品类支持**：支持轴承、螺栓、阀门、管件、电气元件等10+类标准工业物料
 - **对称处理**：统一的核心处理模块确保离线ETL和在线查询的算法一致性
-- **智能分类**：自动物料类别检测和分类处理
+- **自动分类**：自动物料类别检测和分类处理
 - **动态规则**：支持业务专家自主维护规则和词典
 - **高性能**：基于PostgreSQL pg_trgm的毫秒级查询响应
 
@@ -119,14 +119,14 @@ class MaterialProcessor:
 
 ### 2.0 核心算法原理
 
-本系统采用以下核心算法实现智能物料查重：
+本系统采用以下核心算法实现物料查重：
 
 #### 2.0.1 三步处理流程算法
 - **标准化算法**: 基于**Hash表**的高效字符串替换，实现同义词标准化（O(1)查找复杂度）
 - **结构化算法**: 基于**正则表达式有限状态自动机**的属性提取，支持复杂模式匹配
 - **相似度算法**: 基于**PostgreSQL pg_trgm Trigram算法**的快速模糊匹配（三元组索引）
 
-#### 2.0.2 智能分类检测算法
+#### 2.0.2 自动分类检测算法
 - **关键词匹配**: 加权关键词匹配算法，支持多层级分类
 - **机器学习扩展**: 预留**TF-IDF + 朴素贝叶斯**分类器接口，支持自学习优化
 
@@ -270,7 +270,7 @@ class UniversalMaterialProcessor:
         Returns:
             ParsedQuery: 包含标准化名称、结构化属性和类别信息
         """
-        # 1. 智能类别检测
+        # 1. 自动类别检测
         detected_category = category_hint or await self._detect_material_category(description)
         
         # 2. 数据标准化 - 应用类别特定的同义词替换
@@ -290,7 +290,7 @@ class UniversalMaterialProcessor:
         )
     
     async def _detect_material_category(self, description: str) -> str:
-        """智能检测物料类别"""
+        """自动检测物料类别"""
         await self._ensure_cache_fresh()
         
         description_lower = description.lower()
@@ -958,7 +958,7 @@ CREATE TABLE materials_master (
     normalized_name VARCHAR(500) NOT NULL, -- 标准化后的名称（用于查重）
     full_description TEXT, -- 完整描述（name + spec + model组合）
     attributes JSONB NOT NULL DEFAULT '{}', -- 提取的结构化属性
-    detected_category VARCHAR(100) NOT NULL DEFAULT 'general', -- 智能检测的类别
+    detected_category VARCHAR(100) NOT NULL DEFAULT 'general', -- 自动检测的类别
     category_confidence DECIMAL(3,2) DEFAULT 0.5, -- 类别检测置信度
     
     -- 系统管理字段
@@ -993,7 +993,7 @@ CREATE TABLE material_categories (
     oracle_modified_time TIMESTAMP, -- bd_marbasclass.modifiedtime
     
     -- 查重系统扩展字段
-    detection_keywords TEXT[], -- 智能检测关键词数组
+    detection_keywords TEXT[], -- 自动检测关键词数组
     category_description TEXT,
     processing_rules JSONB DEFAULT '{}', -- 类别特定的处理规则配置
     category_level INTEGER DEFAULT 1, -- 分类层级
@@ -1521,7 +1521,7 @@ const handleUpload = async () => {
 
 ### 3.3 数据流与交互逻辑
 
-#### 3.3.1 智能批量查重完整数据流
+#### 3.3.1 批量查重完整数据流
 ```
 用户操作流程:
 1. 用户拖拽/选择Excel文件 → FileUpload组件（支持.xlsx/.xls，≤10MB）
@@ -1537,7 +1537,7 @@ const handleUpload = async () => {
 后端处理流程:
 8. FastAPI接收文件 → FileProcessingService（文件安全验证）
 9. 解析Excel文件 → pandas读取（支持中断恢复）
-10. 逐行智能处理流程:
+10. 逐行处理流程:
    a. 类别检测 → UniversalMaterialProcessor.detect_material_category
    b. 对称处理 → process_material_description（类别特定规则）
    c. 相似度查询 → SimilarityCalculator.find_similar_materials
@@ -1546,7 +1546,7 @@ const handleUpload = async () => {
 
 结果展示流程:
 12. ResultsDisplay组件监听状态变化
-13. 智能结果渲染:
+13. 结果渲染:
     - 类别分布统计图表
     - 逐条结果展示（原始描述+解析结果+相似物料）
     - 置信度可视化指示器
@@ -1581,7 +1581,7 @@ ETL监控数据流:
 14. 监控界面 → 实时显示ETL任务状态和历史记录
 ```
 
-#### 3.3.3 智能类别检测流程
+#### 3.3.3 自动类别检测流程
 ```
 类别检测算法流程:
 1. 文本预处理 → 转小写、去除特殊字符
@@ -1632,11 +1632,11 @@ ETL监控数据流:
 - **扩展性**: 为未来可能的功能扩展预留完整的数据基础
 - **审计需求**: 满足企业级应用的数据审计和合规要求
 
-#### 4.1.3 智能分类检测架构
-**决策:** 基于Oracle分类体系构建智能分类检测，同时支持自定义扩展
+#### 4.1.3 自动分类检测架构
+**决策:** 基于Oracle分类体系构建自动分类检测，同时支持自定义扩展
 **理由:**
 - **业务对齐**: 与现有ERP分类体系保持一致，降低用户学习成本
-- **智能增强**: 通过关键词检测提供自动分类能力
+- **自动增强**: 通过关键词检测提供自动分类能力
 - **灵活扩展**: 支持新增类别和规则，适应业务发展需求
 
 #### 4.1.4 多字段相似度算法

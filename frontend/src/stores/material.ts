@@ -50,8 +50,8 @@ export const useMaterialStore = defineStore('material', () => {
 
       batchResults.value = response.data
       processingStats.value = {
-        totalRecords: response.data.total_processed,
-        processedRecords: response.data.total_processed,
+        totalRecords: response.data.total_processed || 0,
+        processedRecords: response.data.total_processed || 0,
         failedRecords: response.data.skipped_rows?.length || 0,
         estimatedTimeRemaining: 0
       }

@@ -23,16 +23,28 @@ from backend.api.middleware import register_middlewares
 from backend.api.dependencies import get_material_processor, reset_material_processor
 from backend.core.config import app_config
 
-# 配置日志
+# 配置日志（同时输出到控制台和文件）
+log_dir = project_root / 'logs'
+log_dir.mkdir(exist_ok=True)
+
+from datetime import datetime
+log_file = log_dir / f'backend_app_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+
+# 创建日志格式
+log_format = '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+
+# 配置根日志器
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.DEBUG,  # 改为DEBUG级别以获取更多信息
+    format=log_format,
     handlers=[
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(sys.stdout),  # 控制台输出
+        logging.FileHandler(log_file, encoding='utf-8')  # 文件输出
     ]
 )
 
 logger = logging.getLogger(__name__)
+logger.info(f"日志文件: {log_file}")
 
 
 @asynccontextmanager
@@ -48,25 +60,25 @@ async def lifespan(app: FastAPI):
     logger.info("="*80)
     
     try:
-        # 1. 预热物料处理器（加载知识库）
-        logger.info("Initializing Material Processor...")
-        processor = await get_material_processor()
-        logger.info(f"✓ Material Processor initialized")
-        logger.info(f"  - Knowledge base loaded: {processor._knowledge_base_loaded}")
-        
-        # 2. 数据库连接验证
+        # 1. 数据库连接验证
         logger.info("Verifying database connection...")
         from backend.database.session import get_session
+        from sqlalchemy import text
         async for db in get_session():
-            await db.execute("SELECT 1")
-            logger.info("✓ Database connection verified")
+            await db.execute(text("SELECT 1"))
+            logger.info("[OK] Database connection verified")
+            
+            # 2. 预热物料处理器（加载知识库）
+            logger.info("Initializing Material Processor...")
+            processor = await get_material_processor(db)
+            logger.info(f"[OK] Material Processor initialized successfully")
             break
         
         logger.info("="*80)
         logger.info(f"MatMatch API Server v{__version__} is ready!")
-        logger.info(f"📚 Swagger UI: http://localhost:8000/docs")
-        logger.info(f"📖 ReDoc: http://localhost:8000/redoc")
-        logger.info(f"💚 Health Check: http://localhost:8000/health")
+        logger.info(f"Swagger UI: http://localhost:8000/docs")
+        logger.info(f"ReDoc: http://localhost:8000/redoc")
+        logger.info(f"Health Check: http://localhost:8000/health")
         logger.info("="*80)
         
     except Exception as e:
@@ -84,7 +96,7 @@ async def lifespan(app: FastAPI):
     try:
         # 清理资源
         await reset_material_processor()
-        logger.info("✓ Resources cleaned up")
+        logger.info("[OK] Resources cleaned up")
         
     except Exception as e:
         logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
@@ -100,8 +112,8 @@ app = FastAPI(
     
     ### 功能特性
     
-    - 🔍 **智能物料查重**: 基于多字段加权相似度算法，精准匹配物料
-    - 📊 **批量文件处理**: 支持Excel文件批量上传查重
+    -  **智能物料查重**: 基于多字段加权相似度算法，精准匹配物料
+    -  **批量文件处理**: 支持Excel文件批量上传查重
     - 🧠 **知识库管理**: 动态维护规则和同义词词典
     - 📈 **处理透明化**: 完整展示标准化和属性提取过程
     
@@ -142,8 +154,9 @@ register_middlewares(
 register_exception_handlers(app)
 
 # 注册路由
-app.include_router(health.router)
-app.include_router(materials.router)  # Task 3.2: 批量查重API
+app.include_router(health.root_router)  # 根路径
+app.include_router(health.router)       # 健康检查API
+app.include_router(materials.router)    # Task 3.2: 批量查重API
 
 
 # ========== 开发辅助端点 ==========

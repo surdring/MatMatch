@@ -15,8 +15,15 @@ from backend.api.dependencies import verify_dependencies, get_api_version
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
+# 根路径路由（不带前缀）
+root_router = APIRouter(
     prefix="",
+    tags=["根路径"]
+)
+
+# 健康检查路由（带API前缀）
+router = APIRouter(
+    prefix="/api/v1",
     tags=["健康检查"]
 )
 
@@ -46,7 +53,7 @@ class RootResponse(BaseModel):
     health: str = Field(..., description="健康检查地址")
 
 
-@router.get(
+@root_router.get(
     "/",
     response_model=RootResponse,
     summary="API根路径",
@@ -66,7 +73,7 @@ async def root(version: str = Depends(get_api_version)) -> RootResponse:
         version=version,
         docs="/docs",
         redoc="/redoc",
-        health="/health"
+        health="/api/v1/health"
     )
 
 

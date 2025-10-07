@@ -44,7 +44,7 @@ class DatabaseMigration:
         创建pg_trgm和unaccent扩展，支持模糊匹配和文本处理
         对应 [T.1] - 核心功能路径测试的基础要求
         """
-        logger.info("🔧 创建PostgreSQL扩展...")
+        logger.info(" 创建PostgreSQL扩展...")
         
         extensions = [
             "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
@@ -55,9 +55,9 @@ class DatabaseMigration:
             for extension_sql in extensions:
                 try:
                     await conn.execute(text(extension_sql))
-                    logger.info(f"✅ 扩展创建成功: {extension_sql}")
+                    logger.info(f"[OK] 扩展创建成功: {extension_sql}")
                 except Exception as e:
-                    logger.warning(f"⚠️ 扩展创建警告: {e}")
+                    logger.warning(f"[WARN] 扩展创建警告: {e}")
     
     async def create_tables(self):
         """
@@ -73,13 +73,13 @@ class DatabaseMigration:
                 # 对应 [I.1] - AsyncConnection.run_sync用法
                 await conn.run_sync(Base.metadata.create_all)
             
-            logger.info("✅ 数据库表结构创建成功")
+            logger.info("[OK] 数据库表结构创建成功")
             
             # 验证表创建
             await self._verify_tables()
             
         except Exception as e:
-            logger.error(f"❌ 创建表结构失败: {e}")
+            logger.error(f"[FAIL] 创建表结构失败: {e}")
             raise
     
     async def create_indexes_concurrent(self):
@@ -89,7 +89,7 @@ class DatabaseMigration:
         使用CREATE INDEX CONCURRENTLY避免阻塞，对应 [I.5] 风险缓解策略
         对应 [T.3] - pg_trgm索引性能测试的基础设施
         """
-        logger.info("🔍 并发创建数据库索引...")
+        logger.info(" 并发创建数据库索引...")
         
         # 对应 [I.3] - pg_trgm并发创建策略的具体实现
         indexes = [
@@ -202,19 +202,19 @@ class DatabaseMigration:
         async with self.engine.connect() as conn:
             for i, index_sql in enumerate(indexes, 1):
                 try:
-                    logger.info(f"🔍 创建索引 {i}/{len(indexes)}...")
+                    logger.info(f" 创建索引 {i}/{len(indexes)}...")
                     await conn.execute(text(index_sql))
                     await conn.commit()  # 每个索引独立提交
-                    logger.info(f"✅ 索引 {i} 创建成功")
+                    logger.info(f"[OK] 索引 {i} 创建成功")
                     
                     # 短暂等待，避免数据库压力过大
                     await asyncio.sleep(0.5)
                     
                 except Exception as e:
-                    logger.warning(f"⚠️ 索引 {i} 创建警告: {e}")
+                    logger.warning(f"[WARN] 索引 {i} 创建警告: {e}")
                     await conn.rollback()
         
-        logger.info("✅ 所有索引创建完成")
+        logger.info("[OK] 所有索引创建完成")
     
     async def _verify_tables(self):
         """
@@ -222,7 +222,7 @@ class DatabaseMigration:
         
         检查关键表是否存在，对应 [T.1] 核心功能路径测试
         """
-        logger.info("🔍 验证表创建结果...")
+        logger.info(" 验证表创建结果...")
         
         table_checks = [
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'materials_master'",
@@ -241,9 +241,9 @@ class DatabaseMigration:
                 table_name = sql.split("'")[1]
                 
                 if count == 1:
-                    logger.info(f"✅ 表 {table_name} 存在")
+                    logger.info(f"[OK] 表 {table_name} 存在")
                 else:
-                    logger.error(f"❌ 表 {table_name} 不存在")
+                    logger.error(f"[FAIL] 表 {table_name} 不存在")
                     raise Exception(f"表 {table_name} 创建失败")
     
     async def drop_tables(self):
@@ -253,7 +253,7 @@ class DatabaseMigration:
         危险操作，仅在开发环境使用
         对应 [T.2] 边界情况测试中的数据库重置需求
         """
-        logger.warning("⚠️ 删除所有表结构（危险操作）...")
+        logger.warning("[WARN] 删除所有表结构（危险操作）...")
         
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
@@ -270,7 +270,7 @@ class DatabaseMigration:
         Returns:
             dict: 迁移状态信息
         """
-        logger.info("📊 获取迁移状态...")
+        logger.info(" 获取迁移状态...")
         
         status = {
             "tables": {},
@@ -330,7 +330,7 @@ async def run_full_migration():
     执行完整的数据库初始化流程
     对应 [I.2] 编码策略中的迁移脚本执行
     """
-    logger.info("🚀 开始完整数据库迁移...")
+    logger.info(" 开始完整数据库迁移...")
     
     try:
         # 1. 创建扩展
@@ -344,13 +344,13 @@ async def run_full_migration():
         
         # 4. 验证迁移状态
         status = await migration_manager.get_migration_status()
-        logger.info(f"📊 迁移完成状态: {status}")
+        logger.info(f" 迁移完成状态: {status}")
         
-        logger.info("🎉 数据库迁移完成！")
+        logger.info(" 数据库迁移完成！")
         return True
         
     except Exception as e:
-        logger.error(f"❌ 数据库迁移失败: {e}")
+        logger.error(f"[FAIL] 数据库迁移失败: {e}")
         return False
 
 

@@ -1,13 +1,20 @@
 """
-物料知识库生成器 (统一版本)
+物料知识库生成器 v3.0 - 仅支持PostgreSQL清洗后数据
 
-基于Oracle数据库中的真实物料数据，自动生成：
-1. 属性提取规则
-2. 同义词词典  
-3. 分类关键词
-4. 标准化算法
+核心设计原则：
+1. **单一数据源**：仅从PostgreSQL加载已清洗的数据
+2. **对称处理保证**：生成的规则天然匹配13条清洗规则的输出
+3. **Oracle角色明确**：Oracle仅用于ETL初始导入，不参与知识库生成
 
-这是项目的核心数据处理模块，实现"对称处理"原则
+数据流架构：
+Oracle ERP → ETL清洗 → PostgreSQL materials_master → 知识库生成器 → 规则表
+
+自动生成：
+1. 属性提取规则（基于清洗后的specification、normalized_name）
+2. 同义词词典（基于清洗后的material_name）
+3. 分类关键词（基于清洗后的category_name和normalized_name）
+
+这确保了在线API和ETL使用完全一致的数据和规则
 """
 
 import re
@@ -151,78 +158,106 @@ class MaterialKnowledgeGenerator:
     实现"对称处理"原则，确保所有数据处理使用统一标准
     """
     
-    def __init__(self, oracle_connector=None):
+    def __init__(self, pg_session):
         """
-        初始化知识库生成器
+        初始化知识库生成器（仅支持PostgreSQL清洗后数据）
         
         Args:
-            oracle_connector: Oracle连接器实例，如果为None则自动创建
-        """
-        if oracle_connector is None:
-            # 自动创建Oracle连接器
-            from oracledb_connector import OracleDBConnector
-            from oracle_config import OracleConfig
-            config = OracleConfig.get_connection_params()
-            # 只传递OracleDBConnector需要的参数
-            self.oracle = OracleDBConnector(
-                host=config['host'],
-                port=config['port'],
-                service_name=config['service_name'],
-                username=config['username'],
-                password=config['password']
-            )
-        else:
-            self.oracle = oracle_connector
+            pg_session: PostgreSQL异步会话（用于加载清洗后的数据）
             
+        设计原则：
+            知识库生成必须基于PostgreSQL中已清洗的数据，确保：
+            1. 生成的规则天然匹配13条清洗规则的输出
+            2. 单一数据源，避免不一致
+            3. Oracle仅用于ETL初始导入，不参与知识库生成
+        """
+        if pg_session is None:
+            raise ValueError("必须提供PostgreSQL会话，知识库生成器只支持清洗后的数据")
+        
+        self.pg_session = pg_session
         self.materials_data = []
         self.categories_data = []
         self.units_data = []
         
-        # 动态生成的物料类别关键词（基于真实Oracle数据）
+        # 动态生成的物料类别关键词（基于清洗后数据）
         # 这将在 load_all_data() 中通过分析真实物料数据生成
         self.category_keywords = {}
     
     async def load_all_data(self):
-        """加载所有Oracle数据"""
+        """加载PostgreSQL清洗后的数据"""
         logger.info("=" * 80)
-        logger.info("🚀 物料知识库生成器启动")
+        logger.info("🚀 物料知识库生成器启动（基于PostgreSQL清洗后数据）")
         logger.info("=" * 80)
-        logger.info("🔄 开始加载Oracle数据...")
-        
-        if not self.oracle.connect():
-            raise Exception("Oracle数据库连接失败")
+        logger.info("🔄 开始从PostgreSQL加载清洗后的数据...")
+        await self._load_from_postgresql()
+    
+    async def _load_from_postgresql(self):
+        """从PostgreSQL加载清洗后的数据（推荐模式）"""
+        from sqlalchemy import text
         
         try:
-            # 加载物料数据
-            from oracle_config import MaterialQueries
-            logger.info("📊 加载物料数据...")
-            self.materials_data = self.oracle.execute_query_batch(
-                MaterialQueries.BASIC_MATERIAL_QUERY, 
-                batch_size=5000
-            )
-            logger.info(f"✅ 已加载 {len(self.materials_data):,} 条物料数据")
+            # 加载物料数据（使用清洗后的字段）
+            logger.info("📊 从materials_master表加载清洗后的物料数据...")
+            result = await self.pg_session.execute(text("""
+                SELECT 
+                    erp_code,
+                    material_name,
+                    specification,
+                    normalized_name,        -- 清洗后的名称
+                    full_description,       -- 清洗后的完整描述
+                    detected_category,
+                    category_name,
+                    unit_name
+                FROM materials_master
+                WHERE specification IS NOT NULL 
+                  AND specification != ''
+            """))
+            
+            rows = result.fetchall()
+            self.materials_data = [
+                {
+                    'erp_code': row[0],
+                    'material_name': row[1],
+                    'specification': row[2],          # 已清洗
+                    'normalized_name': row[3],        # 已清洗
+                    'full_description': row[4],       # 已清洗
+                    'detected_category': row[5],
+                    'category_name': row[6],
+                    'unit_name': row[7]
+                }
+                for row in rows
+            ]
+            logger.info(f"✅ 已加载 {len(self.materials_data):,} 条清洗后的物料数据")
             
             # 加载分类数据
             logger.info("📂 加载分类数据...")
-            self.categories_data = self.oracle.execute_query(
-                MaterialQueries.MATERIAL_CATEGORIES_QUERY
-            )
+            result = await self.pg_session.execute(text("""
+                SELECT DISTINCT category_name
+                FROM materials_master
+                WHERE category_name IS NOT NULL
+            """))
+            self.categories_data = [{'name': row[0]} for row in result.fetchall()]
             logger.info(f"✅ 已加载 {len(self.categories_data):,} 个物料分类")
             
             # 加载单位数据
             logger.info("📏 加载计量单位数据...")
-            self.units_data = self.oracle.execute_query(
-                MaterialQueries.UNIT_QUERY
-            )
+            result = await self.pg_session.execute(text("""
+                SELECT DISTINCT unit_name
+                FROM materials_master
+                WHERE unit_name IS NOT NULL
+            """))
+            self.units_data = [{'name': row[0]} for row in result.fetchall()]
             logger.info(f"✅ 已加载 {len(self.units_data):,} 个计量单位")
             
-            # 生成基于真实数据的分类关键词
-            logger.info("🏷️ 基于真实Oracle数据生成分类关键词...")
+            # 生成基于清洗后数据的分类关键词
+            logger.info("🏷️ 基于清洗后数据生成分类关键词...")
             self.category_keywords = self._generate_category_keywords_from_data()
             logger.info(f"✅ 已生成 {len(self.category_keywords):,} 个分类的关键词")
             
-        finally:
-            self.oracle.disconnect()
+        except Exception as e:
+            logger.error(f"❌ 从PostgreSQL加载数据失败: {e}")
+            raise
+    
     
     def generate_extraction_rules(self) -> List[Dict]:
         """
@@ -561,21 +596,23 @@ class MaterialKnowledgeGenerator:
         # 基于物料描述模式生成规则
         patterns = self._analyze_description_patterns()
         
-        # 生成尺寸规格提取规则（支持全角半角）
+        # 生成尺寸规格提取规则（清洗规则适配版）
+        # 关键改进：适配13条清洗规则的输出格式
         if patterns.get('sizes'):
             rules.append({
-                'rule_name': '尺寸规格提取',
+                'rule_name': '尺寸规格提取（清洗适配）',
                 'material_category': 'general',
                 'attribute_name': 'size_specification',
-                'regex_pattern': r'(\d+(?:\.\d+)?[×*xX×＊ｘＸ]\d+(?:\.\d+)?(?:[×*xX×＊ｘＸ]\d+(?:\.\d+)?)?)',
+                'regex_pattern': r'(\d+(?:\.\d+)?[_×*x]\d+(?:\.\d+)?(?:[_×*x]\d+(?:\.\d+)?)?)',  # 关键：增加_支持
                 'priority': 90,
                 'confidence': 0.95,
-                'is_active': True,  # 符合Design.md要求
-                'version': 1,  # 符合Design.md要求
-                'description': '提取尺寸规格如20x30, 50×100等，支持全角半角',
+                'is_active': True,
+                'version': 2,  # 版本升级
+                'description': '提取尺寸规格，适配清洗规则输出（支持下划线分隔符）',
                 'example_input': '不锈钢管 ５０×１００×２',
+                'example_input_cleaned': '不锈钢管 50_100_2',  # 新增：清洗后格式
                 'example_output': '50×100×2',
-                'created_by': 'system'  # 符合Design.md要求
+                'created_by': 'system'
             })
         
         return rules
@@ -584,18 +621,23 @@ class MaterialKnowledgeGenerator:
         """生成类别特定规则"""
         rules = []
         
-        # 螺纹规格提取规则（支持全角半角）
+        # 螺纹规格提取规则（清洗规则适配版）
+        # 关键改进：适配13条清洗规则的输出格式
+        # - 支持下划线分隔符（清洗规则将×*转为_）
+        # - 支持小写匹配（清洗规则统一转小写）
+        # - 同时保留对原始格式的支持
         rules.append({
-            'rule_name': '螺纹规格提取',
+            'rule_name': '螺纹规格提取（清洗适配）',
             'material_category': 'fastener',
             'attribute_name': 'thread_specification',
-            'regex_pattern': r'(M\d+(?:\.\d+)?[×*xX×＊ｘＸ]\d+(?:\.\d+)?)',
+            'regex_pattern': r'([Mm]\d+(?:\.\d+)?[_×*xX]\d+(?:\.\d+)?)',  # 关键：增加_和小写支持
             'priority': 95,
             'confidence': 0.98,
             'is_active': True,
-            'version': 1,
-            'description': '提取螺纹规格如M8×1.25，支持全角半角',
+            'version': 2,  # 版本升级
+            'description': '提取螺纹规格，适配清洗规则输出（支持下划线、小写）',
             'example_input': '内六角螺栓 Ｍ８×１．２５×２０',
+            'example_input_cleaned': '内六角螺栓 m8_1.25_20',  # 新增：清洗后格式
             'example_output': 'M8×1.25',
             'created_by': 'system'
         })
@@ -616,18 +658,20 @@ class MaterialKnowledgeGenerator:
             'created_by': 'system'
         })
         
-        # 公称直径提取规则
+        # 公称直径提取规则（清洗规则适配版）
+        # 关键改进：适配希腊字母标准化（φ/Φ → phi/PHI）
         rules.append({
-            'rule_name': '公称直径提取',
+            'rule_name': '公称直径提取（清洗适配）',
             'material_category': 'pipe',
             'attribute_name': 'nominal_diameter',
-            'regex_pattern': r'(DN\d+|Φ\d+|φ\d+|ＤＮ\d+)',
+            'regex_pattern': r'([Dd][Nn]\d+|[Pp][Hh][Ii]\d+|φ\d+|Φ\d+)',  # 关键：增加phi/PHI支持
             'priority': 87,
             'confidence': 0.95,
             'is_active': True,
-            'version': 1,
-            'description': '提取公称直径如DN50, Φ100，支持全角半角',
-            'example_input': '不锈钢管 ＤＮ５０',
+            'version': 2,  # 版本升级
+            'description': '提取公称直径，适配清洗规则输出（支持phi/PHI标准化）',
+            'example_input': '不锈钢管 ＤＮ５０ φ100',
+            'example_input_cleaned': '不锈钢管 dn50 phi100',  # 新增：清洗后格式
             'example_output': 'DN50',
             'created_by': 'system'
         })
@@ -718,13 +762,16 @@ class MaterialKnowledgeGenerator:
         
         # 按分类组织物料描述
         for material in self.materials_data:
-            category_name = material.get('CATEGORY_NAME', '')
+            # 兼容Oracle（大写）和PostgreSQL（小写）字段名
+            category_name = material.get('CATEGORY_NAME') or material.get('category_name') or ''
             if category_name:
-                # 组合完整描述
-                name = material.get('MATERIAL_NAME', '') or ''
-                spec = material.get('SPECIFICATION', '') or ''
-                material_type = material.get('MATERIAL_TYPE', '') or ''
-                full_desc = f"{name} {spec} {material_type}".strip()
+                # 组合完整描述（兼容两种数据源）
+                name = material.get('MATERIAL_NAME') or material.get('material_name') or ''
+                spec = material.get('SPECIFICATION') or material.get('specification') or ''
+                material_type = material.get('MATERIAL_TYPE') or material.get('material_type') or ''
+                # 如果有normalized_name（PostgreSQL清洗后数据），优先使用
+                normalized = material.get('normalized_name') or ''
+                full_desc = normalized if normalized else f"{name} {spec} {material_type}".strip()
                 
                 if full_desc:
                     category_materials[category_name].append(full_desc)

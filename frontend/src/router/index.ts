@@ -19,6 +19,22 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/test-components',
+    name: 'component-test',
+    component: () => import('@/views/ComponentTest.vue'),
+    meta: {
+      title: '组件测试'
+    }
+  },
+  {
+    path: '/admin/login',
+    name: 'admin-login',
+    component: () => import('@/views/Admin/Login.vue'),
+    meta: {
+      title: '管理员登录'
+    }
+  },
+  {
     path: '/admin',
     name: 'admin',
     component: () => import('@/views/Admin/AdminPanel.vue'),
@@ -49,13 +65,26 @@ router.beforeEach((to, _from, next) => {
     document.title = `${to.meta.title} - ${import.meta.env.VITE_APP_TITLE}`
   }
 
-  // 权限验证（暂时跳过，后续实现）
+  // 权限验证
   if (to.meta.requiresAuth) {
-    // TODO: 实现权限验证逻辑
-    console.warn('需要权限验证，但当前未实现')
+    // 动态导入authStore以避免循环依赖
+    import('@/stores/auth').then(({ useAuthStore }) => {
+      const authStore = useAuthStore()
+      
+      if (!authStore.checkAuth()) {
+        // 未登录，重定向到登录页
+        next({
+          path: '/admin/login',
+          query: { redirect: to.fullPath } // 保存原本要访问的路径
+        })
+      } else {
+        // 已登录，允许访问
+        next()
+      }
+    })
+  } else {
+    next()
   }
-
-  next()
 })
 
 export default router
