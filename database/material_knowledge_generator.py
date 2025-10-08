@@ -788,18 +788,50 @@ class MaterialKnowledgeGenerator:
     
     def _extract_category_keywords(self, category_name: str, descriptions: List[str]) -> List[str]:
         """
-        为特定分类提取关键词
+        为特定分类提取关键词（改进版v2.0）
+        
+        改进点：
+        1. 拆分分类名，提取有意义的词根（如"维修类"→["维修","类"]）
+        2. 降低词频阈值到15%，包含更多特征词
+        3. 增加特殊分类的手动关键词补充
         
         Args:
             category_name: 分类名称
             descriptions: 该分类下的所有物料描述
             
         Returns:
-            List[str]: 关键词列表（最多10个）
+            List[str]: 关键词列表（最多15个）
         """
-        keywords = set([category_name])  # 分类名本身作为关键词
+        keywords = set()
         
-        # 提取所有描述中的词汇
+        # 1. 添加分类名本身
+        keywords.add(category_name)
+        
+        # 2. 拆分分类名，提取词根（去除"类"等后缀）
+        # 例如："维修类" → ["维修", "维修类"]
+        #      "功率单元" → ["功率", "单元", "功率单元"]
+        category_words = re.findall(r'[\u4e00-\u9fff]+', category_name)
+        for word in category_words:
+            if len(word) >= 2:
+                keywords.add(word)
+                # 去除"类"后缀
+                if word.endswith('类') and len(word) > 2:
+                    keywords.add(word[:-1])
+        
+        # 3. 特殊分类的手动关键词补充（基于业务知识）
+        special_keywords = {
+            '维修类': ['维修', '功率单元', '功率模块', '控制单元', '驱动单元', '电控单元', '变频单元', '整流单元', '逆变单元'],
+            '电气类': ['电气', '电机', '变频器', '接触器', '断路器', '继电器'],
+            '液压类': ['液压', '油泵', '油缸', '液压阀', '溢流阀'],
+            '气动类': ['气动', '气缸', '气动阀', '电磁阀'],
+            '轴承类': ['轴承', '滚动轴承', '滑动轴承', '深沟球'],
+            '密封类': ['密封', '密封圈', 'O型圈', '骨架油封'],
+        }
+        
+        if category_name in special_keywords:
+            keywords.update(special_keywords[category_name])
+        
+        # 4. 从物料描述中提取高频词
         all_words = []
         for desc in descriptions:
             words = re.findall(r'[\u4e00-\u9fff]+|[A-Za-z]+', desc)
@@ -808,19 +840,19 @@ class MaterialKnowledgeGenerator:
         # 统计词频
         word_counter = Counter(all_words)
         
-        # 选择出现频率 >= 20% 的词作为关键词
-        threshold = max(1, len(descriptions) * 0.2)
+        # 5. 选择出现频率 >= 15% 的词作为关键词（降低阈值）
+        threshold = max(1, len(descriptions) * 0.15)
         for word, count in word_counter.items():
             if count >= threshold and len(word) >= 2:
-                # 过滤掉太常见的通用词
-                if word not in {'mm', 'MM', 'kg', 'KG', 'm', 'M', 'g', 'G'}:
+                # 过滤掉太常见的通用词和单位
+                if word not in {'mm', 'MM', 'kg', 'KG', 'm', 'M', 'g', 'G', 'cm', 'CM', 'L', 'l', 'mpa', 'MPa'}:
                     keywords.add(word)
         
-        # 限制关键词数量，返回最高频的10个
+        # 6. 限制关键词数量，返回最高频的15个（增加到15个）
         sorted_keywords = sorted(keywords, 
                                 key=lambda w: word_counter.get(w, 0), 
                                 reverse=True)
-        return sorted_keywords[:10]
+        return sorted_keywords[:15]
     
     def detect_material_category(self, description: str) -> Tuple[str, float]:
         """检测物料类别"""

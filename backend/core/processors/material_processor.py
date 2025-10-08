@@ -318,7 +318,7 @@ class UniversalMaterialProcessor:
             
             # 构建返回结果
             # full_description必须使用standardized_text（13条规则+同义词替换），与ETL保持对称
-            logger.info(f"✅ 物料处理完成: category='{detected_category}', attrs={len(attributes)}, steps={len(self._processing_steps)}")
+            logger.info(f"[OK] 物料处理完成: category='{detected_category}', attrs={len(attributes)}, steps={len(self._processing_steps)}")
             
             return ParsedQuery(
                 standardized_name=standardized_text,  # 标准化文本（同义词替换后）
@@ -378,25 +378,83 @@ class UniversalMaterialProcessor:
         if not description:
             return 'general', 0.1
         
+        import re
+        
         description_lower = description.lower()
         category_scores = {}
         
-        # 计算每个分类的匹配得分
+        # 计算每个分类的匹配得分（改进版：基于精确匹配+词边界检测）
         for category, keywords in self._category_keywords.items():
             if not keywords:
                 continue
-                
-            matched_count = sum(1 for kw in keywords if kw.lower() in description_lower)
             
-            if matched_count > 0:
-                # 归一化得分 = 匹配数 / 总关键词数
-                score = matched_count / len(keywords)
+            matched_keywords = []
+            
+            # 为每个关键词进行匹配检测
+            for kw in keywords:
+                kw_lower = kw.lower()
                 
-                # 权重调整：如果匹配了多个关键词，提高置信度
-                if matched_count >= 2:
-                    score = min(score * 1.5, 0.95)
+                # 判断是否为纯ASCII关键词(英文/数字)
+                is_ascii = all(ord(c) < 128 for c in kw_lower)
                 
-                category_scores[category] = score
+                # 对于短词(≤2字符)的处理策略:
+                # - 纯ASCII短词(如"hp"): 要求词边界匹配,避免误匹配"hpu690"
+                # - 中文短词(如"维修"): 直接子串匹配即可
+                if len(kw_lower) <= 2 and is_ascii:
+                    # 使用正则词边界 \b (仅对ASCII有效)
+                    pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                    if re.search(pattern, description_lower):
+                        matched_keywords.append(kw)
+                else:
+                    # 长词(≥3字符)或中文短词,使用子串匹配
+                    if kw_lower in description_lower:
+                        matched_keywords.append(kw)
+            
+            if matched_keywords:
+                # 计算得分：匹配数量 × 匹配质量
+                # 基础得分 = 匹配数量 / 总关键词数量
+                base_score = len(matched_keywords) / len(keywords)
+                
+                # 质量奖励：根据匹配的关键词长度
+                avg_keyword_length = sum(len(kw) for kw in matched_keywords) / len(matched_keywords)
+                
+                # 长度奖励系数：
+                # - 平均长度≥4: 1.5x (高质量匹配)
+                # - 平均长度3: 1.3x
+                # - 平均长度2: 1.1x
+                # - 平均长度1: 1.0x (降低短词权重)
+                if avg_keyword_length >= 4:
+                    quality_bonus = 1.5
+                elif avg_keyword_length >= 3:
+                    quality_bonus = 1.3
+                elif avg_keyword_length >= 2:
+                    quality_bonus = 1.1
+                else:
+                    quality_bonus = 1.0
+                
+                # 多词组合奖励：匹配越多,置信度越高
+                if len(matched_keywords) >= 3:
+                    multi_match_bonus = 1.5
+                elif len(matched_keywords) >= 2:
+                    multi_match_bonus = 1.3
+                else:
+                    multi_match_bonus = 1.0
+                
+                # 最终得分 = 基础得分 × 质量奖励 × 多词奖励
+                final_score = base_score * quality_bonus * multi_match_bonus
+                
+                # 限制最大值为0.95
+                final_score = min(final_score, 0.95)
+                
+                category_scores[category] = final_score
+                
+                # 调试日志：记录匹配详情
+                logger.debug(
+                    f"[分类匹配] {category}: 匹配{len(matched_keywords)}/{len(keywords)}个关键词, "
+                    f"平均长度={avg_keyword_length:.1f}, "
+                    f"得分={final_score:.3f}, "
+                    f"匹配项={matched_keywords[:5]}"  # 最多显示5个
+                )
         
         if not category_scores:
             return 'general', 0.1
@@ -404,6 +462,13 @@ class UniversalMaterialProcessor:
         # 返回得分最高的分类
         best_category = max(category_scores, key=category_scores.get)
         confidence = category_scores[best_category]
+        
+        # 打印前3名候选分类（便于调试）
+        if len(category_scores) > 1:
+            top_3 = sorted(category_scores.items(), key=lambda x: x[1], reverse=True)[:3]
+            logger.debug(
+                f"[分类检测] 前3名候选: {', '.join([f'{cat}({score:.3f})' for cat, score in top_3])}"
+            )
         
         return best_category, confidence
     

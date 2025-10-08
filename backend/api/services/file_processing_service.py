@@ -117,12 +117,12 @@ class FileProcessingService:
             # 1. 文件验证
             logger.debug("步骤1: 验证文件...")
             self._validate_file(file)
-            logger.info("✅ 文件验证通过")
+            logger.info("[OK] 文件验证通过")
             
             # 2. 读取Excel
             logger.debug("步骤2: 读取Excel...")
             df = await self._read_excel(file)
-            logger.info(f"✅ Excel读取成功，共 {len(df)} 行")
+            logger.info(f"[OK] Excel读取成功，共 {len(df)} 行")
             
             # 3. 列名检测
             logger.debug("步骤3: 检测列名...")
@@ -147,7 +147,7 @@ class FileProcessingService:
             category_col = detected_columns_dict.get("category")
             
             logger.info(
-                f"✅ 列名检测完成: name={detected_columns.name}, spec={detected_columns.spec}, "
+                f"[OK] 列名检测完成: name={detected_columns.name}, spec={detected_columns.spec}, "
                 f"unit={detected_columns.unit}, category={category_col}"
             )
             
@@ -159,10 +159,10 @@ class FileProcessingService:
                 top_k,
                 category_col  # 传递分类列名
             )
-            logger.info(f"✅ 批量处理完成: 成功{len(results)}条, 错误{len(errors)}条, 跳过{len(skipped_rows)}条")
+            logger.info(f"[OK] 批量处理完成: 成功{len(results)}条, 错误{len(errors)}条, 跳过{len(skipped_rows)}条")
             
         except Exception as e:
-            logger.error(f"❌ 批量查重处理失败: {str(e)}", exc_info=True)
+            logger.error(f"[ERROR] 批量查重处理失败: {str(e)}", exc_info=True)
             raise
         
         # 5. 计算统计信息
@@ -355,6 +355,9 @@ class FileProcessingService:
                             'material_name': mat.material_name,
                             'specification': mat.specification,
                             'model': mat.model,
+                            'unit_name': mat.unit_name,  # 添加单位字段
+                            'category_name': mat.category_name,  # 添加分类字段
+                            'full_description': mat.full_description,  # 添加完整描述（用于前端三级判定）
                             'similarity_score': mat.similarity_score,
                             'similarity_breakdown': mat.similarity_breakdown,
                             'normalized_name': mat.normalized_name,
@@ -370,6 +373,7 @@ class FileProcessingService:
                         model=mat_dict.get('model'),
                         category_name=mat_dict.get('category_name'),
                         unit_name=mat_dict.get('unit_name'),
+                        full_description=mat_dict.get('full_description'),  # 添加完整描述
                         similarity_score=mat_dict.get('similarity_score', 0.0),
                         similarity_breakdown=mat_dict.get('similarity_breakdown', {}),
                         normalized_name=mat_dict.get('normalized_name', ''),
@@ -399,7 +403,7 @@ class FileProcessingService:
                 results.append(result_item)
                 
             except Exception as e:
-                logger.error(f"❌ 处理第 {row_number} 行失败: {str(e)}", exc_info=True)
+                logger.error(f"[ERROR] 处理第 {row_number} 行失败: {str(e)}", exc_info=True)
                 logger.debug(f"错误详情: 类型={type(e).__name__}, 行内容={row.to_dict()}")
                 errors.append(BatchSearchErrorItem(
                     row_number=row_number,

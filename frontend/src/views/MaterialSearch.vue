@@ -318,8 +318,16 @@
             </el-table-column>
             <el-table-column prop="material_name" label="物料名称" min-width="200" show-overflow-tooltip />
             <el-table-column prop="specification" label="规格型号" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="unit_name" label="单位" width="80" align="center" />
-            <el-table-column prop="category_name" label="原分类" width="120" align="center" show-overflow-tooltip />
+            <el-table-column label="单位" width="80" align="center">
+              <template #default="{ row }">
+                {{ row.unit_name || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="原分类" width="120" align="center" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ row.category_name || '-' }}
+              </template>
+            </el-table-column>
             <el-table-column label="状态" width="90" align="center">
               <template #default="{ row }">
                 <el-tag 
@@ -771,21 +779,21 @@ const getDuplicateConclusion = (row: any): { type: 'success' | 'danger' | 'warni
   const highestScore = row.similar_materials[0].similarity_score
   const topMatch = row.similar_materials[0]
   
-  // 获取输入数据（使用清洗后的数据进行对比，确保对称性）
-  const inputNormalizedName = row.parsed_query?.standardized_name || ''
-  const inputSpec = row.parsed_query?.cleaned_spec || (row.input_data?.spec || '').trim()
-  const inputUnit = row.parsed_query?.cleaned_unit || (row.input_data?.unit || '').trim().toLowerCase()
+  // 获取输入数据（使用对称处理后的数据进行对比）
+  // ✅ 对称原则：使用 full_description（13条规则+同义词替换后的完整描述）
+  const inputFullDesc = (row.parsed_query?.full_description || '').trim().toLowerCase()
+  const inputUnit = (row.parsed_query?.cleaned_unit || '').trim().toLowerCase()
   
   // 遍历相似物料，检查完全匹配
   for (const material of row.similar_materials) {
-    const erpNormalizedName = material.normalized_name || ''
-    const erpSpec = (material.specification || '').trim()  // ERP已清洗
-    const erpUnit = (material.unit_name || '').trim().toLowerCase()  // ERP已清洗
+    // ✅ ERP的 full_description 已经过13条规则+同义词替换，与输入完全对称
+    const erpFullDesc = (material.full_description || '').trim().toLowerCase()
+    const erpUnit = (material.unit_name || '').trim().toLowerCase()
     
-    // 判定标准1：清洗后名称 + 规格 + 单位 完全匹配 → 重复
-    if (inputNormalizedName && erpNormalizedName && 
-        inputNormalizedName === erpNormalizedName && 
-        inputSpec === erpSpec &&
+    // 判定标准1：完整描述 + 单位 完全匹配 → 重复
+    // ✅ 对称处理：full_description都经过13条规则+同义词替换，实现语义等价匹配
+    if (inputFullDesc && erpFullDesc && 
+        inputFullDesc === erpFullDesc && 
         inputUnit === erpUnit) {
       return {
         type: 'danger' as const,
@@ -794,10 +802,9 @@ const getDuplicateConclusion = (row: any): { type: 'success' | 'danger' | 'warni
       }
     }
     
-    // 判定标准2：清洗后名称 + 规格完全匹配，但单位不匹配 → 疑是重复
-    if (inputNormalizedName && erpNormalizedName && 
-        inputNormalizedName === erpNormalizedName && 
-        inputSpec === erpSpec &&
+    // 判定标准2：完整描述匹配，但单位不匹配 → 疑是重复
+    if (inputFullDesc && erpFullDesc && 
+        inputFullDesc === erpFullDesc && 
         inputUnit !== erpUnit) {
       return {
         type: 'warning' as const,

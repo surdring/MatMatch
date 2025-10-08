@@ -84,6 +84,9 @@ class SimilarMaterialItem(BaseModel):
     category_name: Optional[str] = Field(None, description="物料分类名称")
     unit_name: Optional[str] = Field(None, description="计量单位")
     
+    # 完整描述（用于前端三级判定）
+    full_description: Optional[str] = Field(None, description="完整描述（经过13条规则+同义词替换）")
+    
     # 查重相关字段
     similarity_score: float = Field(..., ge=0.0, le=1.0, description="相似度得分")
     similarity_breakdown: Optional[Dict[str, float]] = Field(

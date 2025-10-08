@@ -387,12 +387,23 @@ class SimilarityCalculator:
         Returns:
             MaterialResult对象
         """
-        # 提取相似度明细
+        # DEBUG: 输出row对象的所有字段
+        logger.debug(f"[OK] Parsing result row for ERP code: {row.erp_code}")
+        logger.debug(f"[OK] Row keys: {row._mapping.keys()}")
+        logger.debug(f"[OK] unit_name value: {repr(row.unit_name)} (type: {type(row.unit_name)})")
+        logger.debug(f"[OK] category_name value: {repr(row.category_name)} (type: {type(row.category_name)})")
+        
+        # 提取各维度相似度
+        name_sim = float(row.name_similarity) if row.name_similarity is not None else 0.0
+        desc_sim = float(row.description_similarity) if row.description_similarity is not None else 0.0
+        attr_sim = float(row.attributes_similarity) if row.attributes_similarity is not None else 0.0
+        cat_sim = float(row.category_similarity) if row.category_similarity is not None else 0.0
+        
         similarity_breakdown = {
-            'name_similarity': float(row.name_similarity),
-            'description_similarity': float(row.description_similarity),
-            'attributes_similarity': float(row.attributes_similarity),
-            'category_similarity': float(row.category_similarity)
+            'name_similarity': name_sim,
+            'description_similarity': desc_sim,
+            'attributes_similarity': attr_sim,
+            'category_similarity': cat_sim
         }
         
         return MaterialResult(
@@ -409,6 +420,12 @@ class SimilarityCalculator:
             detected_category=row.detected_category,
             category_confidence=float(row.category_confidence) if row.category_confidence else 0.0,
             similarity_score=float(row.similarity_score),
+            # 添加独立的相似度字段
+            name_similarity=name_sim,
+            description_similarity=desc_sim,
+            attributes_similarity=attr_sim,
+            category_similarity=cat_sim,
+            # 保持完整的breakdown字典
             similarity_breakdown=similarity_breakdown
         )
     
