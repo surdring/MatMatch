@@ -133,6 +133,62 @@ class SimilarityCalculator:
         # 生成MD5哈希
         return hashlib.md5(key_string.encode('utf-8')).hexdigest()
     
+    async def find_similar_materials_batch(
+        self,
+        parsed_queries: List[ParsedQuery],
+        limit: int = 10,
+        min_similarity: float = 0.1
+    ) -> Dict[int, List[MaterialResult]]:
+        """
+        批量查找相似物料（性能优化版）
+        
+        Args:
+            parsed_queries: 多个UniversalMaterialProcessor的输出
+            limit: 每个查询返回的结果数量限制
+            min_similarity: 最小相似度阈值 [0.0, 1.0]
+            
+        Returns:
+            Dict[int, List[MaterialResult]]: 查询索引 -> 相似物料列表
+            
+        性能优势:
+            - 单次SQL查询处理所有输入（避免N次查询）
+            - 使用CTE + 窗口函数优化
+            - 预期性能: N条 × 300ms → 1次 × 500ms (提升N倍)
+        """
+        if not parsed_queries:
+            return {}
+        
+        try:
+            # 构建批量SQL查询
+            sql_query = self._build_batch_similarity_query(len(parsed_queries), limit, min_similarity)
+            
+            # 准备批量查询参数
+            params = self._prepare_batch_query_params(parsed_queries, limit, min_similarity)
+            
+            # 执行批量查询
+            logger.info(f"[批量查询] 开始处理 {len(parsed_queries)} 条物料...")
+            result = await self.db.execute(text(sql_query), params)
+            rows = result.fetchall()
+            
+            # 解析结果（按query_idx分组）
+            results_by_idx: Dict[int, List[MaterialResult]] = {}
+            for row in rows:
+                query_idx = int(row[0])  # 第一列是query_idx，转为整数
+                material = self._parse_batch_result_row(row, parsed_queries[query_idx])
+                
+                if query_idx not in results_by_idx:
+                    results_by_idx[query_idx] = []
+                results_by_idx[query_idx].append(material)
+            
+            logger.info(f"[批量查询] 完成，共返回 {len(rows)} 条结果")
+            
+            return results_by_idx
+            
+        except Exception as e:
+            error_msg = f"Failed to find similar materials (batch): {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
+    
     async def find_similar_materials(
         self,
         parsed_query: ParsedQuery,
@@ -186,32 +242,11 @@ class SimilarityCalculator:
             # 缓存结果
             self._cache[cache_key] = materials
             
-            # 详细日志：显示查询结果
-            # 安全编码日志输出，避免GBK编码错误
-            safe_name = parsed_query.standardized_name[:30].encode('ascii', errors='ignore').decode('ascii')
-            logger.info(
-                f"Found {len(materials)} similar materials for "
-                f"'{safe_name}...' (similarity >= {min_similarity})"
+            # 简化日志输出（性能优化：减少90%日志量）
+            logger.debug(
+                f"[查询完成] 找到{len(materials)}条相似物料 "
+                f"(输入: {parsed_query.standardized_name[:20]}..., 相似度>={min_similarity})"
             )
-            
-            if materials:
-                logger.info("=" * 80)
-                logger.info(f"查询详情：")
-                # 使用repr()避免编码问题
-                logger.info(f"  输入名称: {repr(parsed_query.standardized_name)}")
-                logger.info(f"  输入属性: {parsed_query.attributes}")
-                logger.info(f"  检测分类: {parsed_query.detected_category}")
-                logger.info("-" * 80)
-                logger.info(f"匹配结果（前5条）：")
-                for i, mat in enumerate(materials[:5], 1):
-                    logger.info(f"  {i}. {mat.erp_code} - {repr(mat.material_name)}")
-                    spec_repr = repr(mat.specification) if mat.specification else '-'
-                    logger.info(f"     规格: {spec_repr} | 单位: {mat.unit_name or '-'} | 分类: {mat.category_name or '-'}")
-                    name_sim = mat.name_similarity if mat.name_similarity is not None else 0.0
-                    desc_sim = mat.description_similarity if mat.description_similarity is not None else 0.0
-                    logger.info(f"     相似度: {mat.similarity_score:.3f} (名称:{name_sim:.3f}, 描述:{desc_sim:.3f})")
-                    logger.info(f"     状态: {'已启用' if mat.enable_state == 2 else '已停用' if mat.enable_state == 3 else '未启用'}")
-                logger.info("=" * 80)
             
             return materials
             
@@ -219,6 +254,175 @@ class SimilarityCalculator:
             error_msg = f"Failed to find similar materials: {str(e)}"
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
+    
+    def _build_batch_similarity_query(
+        self,
+        batch_size: int,
+        limit: int,
+        min_similarity: float
+    ) -> str:
+        """
+        构建批量相似度查询SQL（使用CTE + 窗口函数）
+        
+        性能优化核心：
+        1. 使用VALUES构造批量查询输入
+        2. 使用CROSS JOIN进行笛卡尔积
+        3. 使用ROW_NUMBER()窗口函数取Top-K
+        4. 单次查询处理所有输入
+        """
+        w_name = self.weights['name']
+        w_desc = self.weights['description']
+        w_attr = self.weights['attributes']
+        w_cat = self.weights['category']
+        
+        # 构建VALUES子句（动态生成N行）
+        values_rows = []
+        for i in range(batch_size):
+            values_rows.append(
+                f"(:query_idx_{i}, :query_name_{i}, :query_desc_{i}, :query_category_{i})"
+            )
+        values_clause = ",\n            ".join(values_rows)
+        
+        sql = f"""
+        WITH query_batch AS (
+            -- 批量查询输入（使用VALUES构造）
+            SELECT * FROM (VALUES
+                {values_clause}
+            ) AS t(query_idx, query_name, query_desc, query_category)
+        ),
+        similarity_results AS (
+            -- 批量计算相似度
+            SELECT 
+                qb.query_idx,
+                m.erp_code,
+                m.material_name,
+                m.specification,
+                m.model,
+                m.enable_state,
+                m.unit_name,
+                m.category_name,
+                m.normalized_name,
+                m.full_description,
+                m.attributes,
+                m.detected_category,
+                m.category_confidence,
+                m.oracle_category_id,
+                m.oracle_unit_id,
+                -- 多字段加权相似度计算
+                (
+                    {w_name} * similarity(m.normalized_name, qb.query_name) +
+                    {w_desc} * similarity(m.full_description, qb.query_desc) +
+                    {w_attr} * CASE
+                        -- 如果双方都没有属性，视为完全相同（1.0）
+                        WHEN m.attributes IS NULL OR m.attributes = 'null'::jsonb OR m.attributes = '{{}}'::jsonb
+                        THEN 1.0
+                        -- 如果有属性，计算平均相似度
+                        ELSE COALESCE(
+                            (SELECT AVG(similarity(m.attributes->>key, qb.query_desc))
+                             FROM jsonb_object_keys(m.attributes) AS key),
+                            1.0
+                        )
+                    END +
+                    {w_cat} * CASE 
+                        WHEN m.detected_category = qb.query_category 
+                        THEN 1.0 
+                        ELSE 0.0 
+                    END
+                ) AS similarity_score,
+                -- 各维度相似度明细
+                similarity(m.normalized_name, qb.query_name) AS name_similarity,
+                similarity(m.full_description, qb.query_desc) AS description_similarity,
+                CASE
+                    -- 如果双方都没有属性，视为完全相同（1.0）
+                    WHEN m.attributes IS NULL OR m.attributes = 'null'::jsonb OR m.attributes = '{{}}'::jsonb
+                    THEN 1.0
+                    -- 如果有属性，计算平均相似度
+                    ELSE COALESCE(
+                        (SELECT AVG(similarity(m.attributes->>key, qb.query_desc))
+                         FROM jsonb_object_keys(m.attributes) AS key),
+                        1.0
+                    )
+                END AS attributes_similarity,
+                CASE 
+                    WHEN m.detected_category = qb.query_category 
+                    THEN 1.0 
+                    ELSE 0.0 
+                END AS category_similarity
+            FROM query_batch qb
+            CROSS JOIN materials_master m
+            WHERE 
+                -- 预筛选：利用GIN索引加速
+                (
+                    m.normalized_name % qb.query_name OR
+                    m.full_description % qb.query_desc
+                )
+                -- 相似度阈值过滤
+                AND (
+                    {w_name} * similarity(m.normalized_name, qb.query_name) +
+                    {w_desc} * similarity(m.full_description, qb.query_desc)
+                ) >= :min_similarity
+        ),
+        ranked_results AS (
+            -- 使用窗口函数为每个查询取Top-K
+            SELECT 
+                *,
+                ROW_NUMBER() OVER (PARTITION BY query_idx ORDER BY similarity_score DESC) AS rank
+            FROM similarity_results
+        )
+        SELECT * FROM ranked_results 
+        WHERE rank <= :limit
+        ORDER BY query_idx, rank;
+        """
+        
+        return sql
+    
+    def _prepare_batch_query_params(
+        self,
+        parsed_queries: List[ParsedQuery],
+        limit: int,
+        min_similarity: float
+    ) -> Dict[str, Any]:
+        """准备批量查询参数"""
+        params = {
+            'limit': limit,
+            'min_similarity': min_similarity
+        }
+        
+        for i, pq in enumerate(parsed_queries):
+            params[f'query_idx_{i}'] = str(i)  # 修复：转为字符串
+            params[f'query_name_{i}'] = pq.standardized_name
+            params[f'query_desc_{i}'] = f"{pq.standardized_name} {' '.join(pq.attributes.values())}"
+            params[f'query_category_{i}'] = pq.detected_category or ''
+        
+        return params
+    
+    def _parse_batch_result_row(
+        self,
+        row: Any,
+        parsed_query: ParsedQuery
+    ) -> MaterialResult:
+        """解析批量查询结果行（跳过第一列query_idx）"""
+        return MaterialResult(
+            erp_code=row[1],
+            material_name=row[2],
+            specification=row[3],
+            model=row[4],
+            enable_state=row[5],
+            unit_name=row[6],
+            category_name=row[7],
+            normalized_name=row[8],
+            full_description=row[9],
+            attributes=row[10] or {},
+            detected_category=row[11],
+            category_confidence=row[12],
+            oracle_category_id=row[13],
+            oracle_unit_id=row[14],
+            similarity_score=float(row[15]),
+            name_similarity=float(row[16]) if row[16] is not None else None,
+            description_similarity=float(row[17]) if row[17] is not None else None,
+            attributes_similarity=float(row[18]) if row[18] is not None else None,
+            category_similarity=float(row[19]) if row[19] is not None else None
+        )
     
     def _build_similarity_query(
         self,
@@ -313,6 +517,7 @@ class SimilarityCalculator:
         算法:
         1. 对每个属性键，如果存在则计算相似度
         2. 归一化：所有属性相似度的平均值
+        3. 如果双方都没有属性，视为完全相同（1.0）
         
         Args:
             parsed_query: 查询对象
@@ -321,7 +526,16 @@ class SimilarityCalculator:
             SQL片段
         """
         if not parsed_query.attributes:
-            return "0.0"
+            # 修复：如果查询没有属性，检查数据库物料是否也没有属性
+            # 双方都没有属性 → 1.0（完全相同）
+            # 数据库有属性但查询没有 → 0.0（不匹配）
+            return """
+            CASE
+                WHEN m.attributes IS NULL OR m.attributes = 'null'::jsonb OR m.attributes = '{{}}'::jsonb
+                THEN 1.0
+                ELSE 0.0
+            END
+            """
         
         # 为每个属性构建相似度计算
         similarity_terms = []

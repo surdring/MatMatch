@@ -888,6 +888,10 @@ const handleFileSelected = (file: File, data: any[]) => {
     availableColumns.value = Object.keys(data[0])
   }
 
+  // ✅ 清空之前的查重结果
+  batchResults.value = null
+  materialStore.clearResults()
+
   // 优化1: 只保留一个提示消息（移除此处的ElMessage）
 }
 
@@ -974,6 +978,10 @@ const startSearch = async () => {
   uploadProgress.value = 0
   processedItems.value = 0
   totalItems.value = sampleData.value.length
+
+  // ✅ 清空之前的查重结果
+  batchResults.value = null
+  materialStore.clearResults()
 
   try {
     // 模拟进度更新

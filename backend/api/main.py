@@ -69,9 +69,13 @@ async def lifespan(app: FastAPI):
             logger.info("[OK] Database connection verified")
             
             # 2. 预热物料处理器（加载知识库）
-            logger.info("Initializing Material Processor...")
+            logger.info("[预热] 正在加载知识库...")
             processor = await get_material_processor(db)
-            logger.info(f"[OK] Material Processor initialized successfully")
+            # 强制触发知识库加载（_ensure_cache_fresh）
+            await processor._ensure_cache_fresh()
+            logger.info(f"[OK] 知识库预热完成 - 规则数: {len(processor._extraction_rules)}, "
+                       f"同义词数: {len(processor._synonyms)}, "
+                       f"分类数: {len(processor._category_keywords)}")
             break
         
         logger.info("="*80)
@@ -178,6 +182,7 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=True,
-        log_level="info"
+        log_level="info",
+        timeout_keep_alive=300  # 增加到300秒（5分钟）
     )
 

@@ -9,6 +9,7 @@ UniversalMaterialProcessor - 通用物料处理器
 
 import logging
 import re
+import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -69,7 +70,10 @@ class UniversalMaterialProcessor:
         # 处理步骤记录（用于透明化）
         self._processing_steps: List[str] = []
         
-        logger.info(f"UniversalMaterialProcessor initialized (cache TTL: {cache_ttl_seconds}s)")
+        # 并发安全：数据库访问锁（避免"concurrent operations not permitted"错误）
+        self._db_lock = asyncio.Lock()
+        
+        # 减少启动日志（性能优化）
     
     def _build_fullwidth_map(self) -> Dict[str, str]:
         """
@@ -116,6 +120,8 @@ class UniversalMaterialProcessor:
         确保缓存新鲜度，支持热更新
         
         如果缓存未加载或已过期（超过TTL），则重新从PostgreSQL加载知识库
+        
+        并发安全：使用asyncio.Lock保护数据库访问
         """
         now = datetime.now()
         
@@ -127,11 +133,17 @@ class UniversalMaterialProcessor:
         )
         
         if need_refresh:
-            logger.info("Cache expired or not loaded, reloading knowledge base from PostgreSQL...")
-            await self._load_knowledge_base()
-            self._last_cache_update = now
-            self._cache_loaded = True
-            logger.info(f"Knowledge base reloaded at {now.isoformat()}")
+            # 使用锁保护数据库访问（避免并发冲突）
+            async with self._db_lock:
+                # 双重检查：获取锁后再次检查是否需要刷新（其他任务可能已刷新）
+                if (not self._cache_loaded or
+                    self._last_cache_update is None or
+                    (now - self._last_cache_update) > self.cache_ttl):
+                    
+                    # 简化日志（性能优化）
+                    await self._load_knowledge_base()
+                    self._last_cache_update = now
+                    self._cache_loaded = True
     
     async def _load_knowledge_base(self) -> None:
         """
@@ -161,7 +173,7 @@ class UniversalMaterialProcessor:
                 }
                 for rule in rules
             ]
-            logger.info(f"[OK] Loaded {len(self._extraction_rules)} extraction rules from PostgreSQL")
+            # 减少加载日志
             
             # 2. 加载同义词词典
             stmt = select(Synonym).where(Synonym.is_active == True)
@@ -172,7 +184,7 @@ class UniversalMaterialProcessor:
                 syn.original_term: syn.standard_term
                 for syn in synonyms
             }
-            logger.info(f"[OK] Loaded {len(self._synonyms)} synonyms from PostgreSQL")
+            # 减少加载日志
             
             # 3. 加载分类关键词
             stmt = select(KnowledgeCategory).where(KnowledgeCategory.is_active == True)
@@ -183,7 +195,7 @@ class UniversalMaterialProcessor:
                 cat.category_name: cat.keywords
                 for cat in categories
             }
-            logger.info(f"[OK] Loaded {len(self._category_keywords)} categories from PostgreSQL")
+            # 减少加载日志
             
         except Exception as e:
             error_msg = f"Failed to load knowledge base from PostgreSQL: {str(e)}"
@@ -217,7 +229,7 @@ class UniversalMaterialProcessor:
             步骤3: 同义词替换
             步骤4: 属性提取
         """
-        logger.debug(f"[物料处理开始] description='{description[:50]}...', category_hint={category_hint}")
+        # 减少处理日志（性能优化）
         
         # 确保缓存新鲜
         await self._ensure_cache_fresh()
@@ -240,32 +252,25 @@ class UniversalMaterialProcessor:
         full_description = description.strip()
         
         try:
-            logger.debug(f"开始对称处理流程...")
             # 步骤1: 智能分类检测
-            logger.debug(f"[步骤1] 开始分类检测...")
             detected_category, confidence = self._detect_material_category(
                 full_description,
                 category_hint
             )
-            logger.debug(f"[步骤1] 检测结果: category='{detected_category}', confidence={confidence:.2f}")
             self._processing_steps.append(
                 f"步骤1: 检测到类别'{detected_category}'，置信度{confidence:.2f}"
             )
             
             # 步骤2: 文本标准化
-            logger.debug(f"[步骤2] 开始文本标准化...")
             normalized_text = self._normalize_text(full_description)
             if normalized_text != full_description:
-                logger.debug(f"[步骤2] 标准化: '{full_description[:50]}...' → '{normalized_text[:50]}...'")
                 self._processing_steps.append(
                     f"步骤2: 文本标准化（全角转半角、去除多余空格）"
                 )
             
             # 步骤3: 同义词替换
-            logger.debug(f"[步骤3] 开始同义词替换...")
             standardized_text, replaced_count = self._apply_synonyms(normalized_text)
             if replaced_count > 0:
-                logger.debug(f"[步骤3] 替换了 {replaced_count} 个同义词")
                 self._processing_steps.append(
                     f"步骤3: 同义词替换（{replaced_count}个词）"
                 )
@@ -274,17 +279,15 @@ class UniversalMaterialProcessor:
             standardized_name = self._extract_core_name(standardized_text)
             
             # 步骤4: 属性提取
-            logger.debug(f"[步骤4] 开始属性提取...")
             attributes = self._extract_attributes(standardized_text, detected_category)
             if attributes:
                 attr_str = ', '.join(f"{k}={v}" for k, v in attributes.items())
-                logger.debug(f"[步骤4] 提取到属性: {attr_str}")
                 self._processing_steps.append(
                     f"步骤4: 提取属性 {{{attr_str}}}"
                 )
             
             # 步骤5: 清洗原始名称、规格、单位（用于前端精确对比）
-            logger.debug(f"[步骤5] 开始清洗原始字段...")
+            # 减少清洗日志
             cleaned_name = None
             cleaned_spec = None
             cleaned_unit = None
@@ -293,7 +296,6 @@ class UniversalMaterialProcessor:
                 # 应用13条清洗规则到名称
                 cleaned_name = self._normalize_text(raw_name).strip()
                 if raw_name != cleaned_name:
-                    logger.debug(f"[步骤5] 清洗名称: '{raw_name}' → '{cleaned_name}'")
                     self._processing_steps.append(
                         f"步骤5: 清洗名称 '{raw_name}' → '{cleaned_name}'"
                     )
@@ -302,7 +304,6 @@ class UniversalMaterialProcessor:
                 # 应用13条清洗规则到规格
                 cleaned_spec = self._normalize_text(raw_spec).strip()
                 if raw_spec != cleaned_spec:
-                    logger.debug(f"[步骤5] 清洗规格: '{raw_spec}' → '{cleaned_spec}'")
                     self._processing_steps.append(
                         f"步骤5: 清洗规格 '{raw_spec}' → '{cleaned_spec}'"
                     )
@@ -311,14 +312,13 @@ class UniversalMaterialProcessor:
                 # 单位只需简单清洗（去空格、统一大小写）
                 cleaned_unit = raw_unit.strip().lower()
                 if raw_unit != cleaned_unit:
-                    logger.debug(f"[步骤5] 清洗单位: '{raw_unit}' → '{cleaned_unit}'")
                     self._processing_steps.append(
                         f"步骤5: 清洗单位 '{raw_unit}' → '{cleaned_unit}'"
                     )
             
             # 构建返回结果
             # full_description必须使用standardized_text（13条规则+同义词替换），与ETL保持对称
-            logger.info(f"[OK] 物料处理完成: category='{detected_category}', attrs={len(attributes)}, steps={len(self._processing_steps)}")
+            # 减少完成日志（性能优化）
             
             return ParsedQuery(
                 standardized_name=standardized_text,  # 标准化文本（同义词替换后）
@@ -447,14 +447,6 @@ class UniversalMaterialProcessor:
                 final_score = min(final_score, 0.95)
                 
                 category_scores[category] = final_score
-                
-                # 调试日志：记录匹配详情
-                logger.debug(
-                    f"[分类匹配] {category}: 匹配{len(matched_keywords)}/{len(keywords)}个关键词, "
-                    f"平均长度={avg_keyword_length:.1f}, "
-                    f"得分={final_score:.3f}, "
-                    f"匹配项={matched_keywords[:5]}"  # 最多显示5个
-                )
         
         if not category_scores:
             return 'general', 0.1
@@ -462,13 +454,6 @@ class UniversalMaterialProcessor:
         # 返回得分最高的分类
         best_category = max(category_scores, key=category_scores.get)
         confidence = category_scores[best_category]
-        
-        # 打印前3名候选分类（便于调试）
-        if len(category_scores) > 1:
-            top_3 = sorted(category_scores.items(), key=lambda x: x[1], reverse=True)[:3]
-            logger.debug(
-                f"[分类检测] 前3名候选: {', '.join([f'{cat}({score:.3f})' for cat, score in top_3])}"
-            )
         
         return best_category, confidence
     
@@ -514,9 +499,9 @@ class UniversalMaterialProcessor:
         3. 去除所有空格 (提升匹配精度，M8 20 → M820)
         4. 乘号类统一 (*×·•・ → _)
         5. 数字间x/X处理 (200x100 → 200_100)
-        6. 斜杠类统一 (/／\ → _)
+        6. 斜杠类统一 (/／\\ → _)
         7. 逗号类统一 (,，、 → _)
-        8. 换行符处理 (\n → _)
+        8. 换行符处理 (\\n → _)
         9. 连字符智能处理 (保留数字范围如10-50)
         10. 统一转小写 (M8X20 → m8_20, 提升匹配精度)
         11. 小数点.0优化 (3.0 → 3, 保留3.5)
@@ -728,5 +713,5 @@ class UniversalMaterialProcessor:
         self._category_keywords = {}
         self._last_cache_update = None
         self._cache_loaded = False
-        logger.info("Cache cleared, will reload on next request")
+        # 减少缓存清理日志
 

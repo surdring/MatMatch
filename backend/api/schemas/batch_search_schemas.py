@@ -84,6 +84,9 @@ class SimilarMaterialItem(BaseModel):
     category_name: Optional[str] = Field(None, description="物料分类名称")
     unit_name: Optional[str] = Field(None, description="计量单位")
     
+    # 状态信息
+    enable_state: int = Field(2, description="启用状态（1=未启用，2=已启用，3=已停用）")
+    
     # 完整描述（用于前端三级判定）
     full_description: Optional[str] = Field(None, description="完整描述（经过13条规则+同义词替换）")
     

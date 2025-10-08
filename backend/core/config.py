@@ -28,14 +28,14 @@ class DatabaseConfig(BaseSettings):
     database: str = Field(default="matmatch", description="数据库名称")
     
     # 连接池配置 - 对应 [I.5] 并发处理机制
-    pool_size: int = Field(default=10, description="连接池大小")
-    max_overflow: int = Field(default=20, description="连接池最大溢出连接数")
-    pool_timeout: int = Field(default=30, description="获取连接超时时间(秒)")
+    pool_size: int = Field(default=20, description="连接池大小")  # 增加到20（优化并发性能）
+    max_overflow: int = Field(default=30, description="连接池最大溢出连接数")  # 增加到30（总计50连接）
+    pool_timeout: int = Field(default=60, description="获取连接超时时间(秒)")  # 增加到60秒
     pool_recycle: int = Field(default=3600, description="连接回收时间(秒)")
     
     # 查询优化配置 - 对应 [R.7-8] 性能与内存要求
     echo_sql: bool = Field(default=False, description="是否打印SQL语句")
-    query_timeout: int = Field(default=30, description="查询超时时间(秒)")
+    query_timeout: int = Field(default=60, description="查询超时时间(秒)")  # 增加到60秒
     
     @property
     def database_url(self) -> str:
@@ -77,7 +77,7 @@ class ApplicationConfig(BaseSettings):
     # 性能配置 - 对应AC 1.2 性能要求
     batch_processing_limit: int = Field(default=1000, description="批量处理记录数限制")
     query_result_limit: int = Field(default=10, description="查询结果数量限制")
-    processing_timeout: int = Field(default=300, description="处理超时时间(秒)")
+    processing_timeout: int = Field(default=600, description="处理超时时间(秒)")  # 增加到600秒（10分钟）
     
     model_config = ConfigDict(
         env_prefix="APP_",
