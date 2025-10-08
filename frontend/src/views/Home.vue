@@ -81,30 +81,105 @@
         </div>
 
         <div class="stats-section" v-loading="statsLoading">
-          <el-row :gutter="20">
-            <el-col :xs="12" :sm="6">
-              <div class="stat-item">
-                <div class="stat-value">{{ formatNumber(stats.totalMaterials) }}</div>
-                <div class="stat-label">物料数据</div>
-              </div>
+          <el-row :gutter="24" class="stats-row" justify="space-between">
+            <!-- 统计项1: 物料数据 -->
+            <el-col :span="4" class="stat-col">
+              <el-tooltip effect="dark" placement="top">
+                <template #content>
+                  <div style="max-width: 280px; line-height: 1.6;">
+                    <div style="font-weight: bold; margin-bottom: 6px;">ERP系统中的物料总数</div>
+                    <div style="font-size: 13px; margin-bottom: 6px;">
+                      包含已启用和已停用的物料
+                    </div>
+                    <div style="font-size: 12px; color: #e6a23c; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 6px;">
+                      💡 <strong>为什么包含停用物料？</strong><br>
+                      停用物料仍可能在历史订单、库存记录中出现，<br>
+                      查重时需要检测是否与停用物料重复，避免<br>
+                      "换个名字重建已停用物料"的数据冗余问题。
+                    </div>
+                  </div>
+                </template>
+                <div class="stat-item">
+                  <div class="stat-value">{{ formatNumber(stats.totalMaterials) }}</div>
+                  <div class="stat-label">物料数据</div>
+                </div>
+              </el-tooltip>
             </el-col>
-            <el-col :xs="12" :sm="6">
-              <div class="stat-item">
-                <div class="stat-value">{{ formatNumber(stats.totalCategories) }}</div>
-                <div class="stat-label">物料分类</div>
-              </div>
+
+            <!-- 统计项2: 物料分类 -->
+            <el-col :span="4" class="stat-col">
+              <el-tooltip 
+                effect="dark" 
+                content="系统支持的物料分类数量，用于自动识别物料类别" 
+                placement="top"
+              >
+                <div class="stat-item">
+                  <div class="stat-value">{{ formatNumber(stats.totalCategories) }}</div>
+                  <div class="stat-label">物料分类</div>
+                </div>
+              </el-tooltip>
             </el-col>
-            <el-col :xs="12" :sm="6">
-              <div class="stat-item">
-                <div class="stat-value">{{ formatNumber(stats.totalSynonyms) }}</div>
-                <div class="stat-label">同义词库</div>
-              </div>
+
+            <!-- 统计项3: 清洗规则 -->
+            <el-col :span="4" class="stat-col">
+              <el-tooltip 
+                effect="dark" 
+                placement="top"
+                popper-class="cleaning-rules-tooltip"
+              >
+                <template #content>
+                  <div style="max-width: 350px; line-height: 1.6;">
+                    <div style="font-weight: bold; margin-bottom: 8px;">文本标准化清洗规则（13条）：</div>
+                    <div style="font-size: 13px;">
+                      • 希腊字母标准化（φ/Φ → phi/PHI）<br>
+                      • 全角符号转半角（（）：→ ():）<br>
+                      • 数学符号标准化（≥≤℃ → &gt;=/&lt;=C）<br>
+                      • 去除所有空格（提升匹配精度）<br>
+                      • 乘号类统一（*×· → _）<br>
+                      • 数字间x/X处理（200x100 → 200_100）<br>
+                      • 斜杠类统一（/／\ → _）<br>
+                      • 逗号类统一（,，、 → _）<br>
+                      • 换行符处理（\n → _）<br>
+                      • 连字符智能处理（保留数字范围）<br>
+                      • 统一转小写（M8X20 → m8_20）<br>
+                      • 小数点.0优化（3.0 → 3）<br>
+                      • 清理连续下划线及首尾下划线
+                    </div>
+                  </div>
+                </template>
+                <div class="stat-item">
+                  <div class="stat-value">13</div>
+                  <div class="stat-label">清洗规则</div>
+                </div>
+              </el-tooltip>
             </el-col>
-            <el-col :xs="12" :sm="6">
-              <div class="stat-item">
-                <div class="stat-value">{{ stats.totalRules }}</div>
-                <div class="stat-label">提取规则</div>
-              </div>
+
+            <!-- 统计项4: 同义词库 -->
+            <el-col :span="4" class="stat-col">
+              <el-tooltip 
+                effect="dark" 
+                content="同义词词典规模，用于物料描述的标准化处理" 
+                placement="top"
+              >
+                <div class="stat-item">
+                  <div class="stat-value">{{ formatNumber(stats.totalSynonyms) }}</div>
+                  <div class="stat-label">同义词库</div>
+                </div>
+              </el-tooltip>
+            </el-col>
+
+            <!-- 统计项5: 提取规则 -->
+            <el-col :span="4" class="stat-col">
+              <el-tooltip 
+                effect="dark" 
+                content="属性提取规则数量，用于从物料描述中自动提取关键属性" 
+                placement="top"
+              >
+                <div class="stat-item">
+                  <div class="stat-value">{{ stats.totalRules }}</div>
+                  <div class="stat-label">提取规则</div>
+                </div>
+              </el-tooltip>
             </el-col>
           </el-row>
         </div>
@@ -295,23 +370,45 @@ onMounted(() => {
 .stats-section {
   background: rgba(255, 255, 255, 0.95);
   border-radius: 12px;
-  padding: 40px 20px;
+  padding: 40px 30px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.stats-row {
+  display: flex;
+  align-items: center;
+}
+
+.stat-col {
+  display: flex;
+  justify-content: center;
 }
 
 .stat-item {
   text-align: center;
+  padding: 20px 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-radius: 8px;
+  width: 100%;
+  
+  &:hover {
+    background: rgba(64, 158, 255, 0.05);
+    transform: translateY(-2px);
+  }
   
   .stat-value {
-    font-size: 36px;
+    font-size: 38px;
     font-weight: 700;
     color: #409eff;
     margin-bottom: 8px;
+    line-height: 1.2;
   }
   
   .stat-label {
-    font-size: 14px;
-    color: #909399;
+    font-size: 15px;
+    color: #606266;
+    font-weight: 500;
   }
 }
 
