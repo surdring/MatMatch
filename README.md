@@ -4,15 +4,16 @@
 
 本项目是一个基于结构化解析与模糊匹配的智能物料查重工具，旨在解决ERP系统中因物料描述不规范导致的重复编码问题。通过"对称处理"的核心原则和一系列数据驱动的算法，实现对海量物料数据的高效、精准查重。
 
-**当前进度**: Phase 0-3.2已完成（67%），Phase 3.3-5待开发（33%）
+**当前进度**: Phase 0-4已完成（100%），Phase 5待开发（0%）
 
 > 📖 **详细进度和任务分解**: 查看 [`specs/main/tasks.md`](specs/main/tasks.md) ⭐ 单一事实来源（SSOT）
 
 **核心特性**:
-- ✅ **高性能**: ETL处理速度>24,000条/分钟，查询响应<120ms
+- ✅ **高性能**: 批量查重≤3秒/30条，查询响应<120ms
 - ✅ **高准确率**: Top-10准确率100%，对称处理一致性100%
 - ✅ **数据驱动**: 27,408个同义词、1,594个分类、6条提取规则
-- ✅ **完整API**: FastAPI服务框架 + 批量查重API
+- ✅ **完整全栈**: FastAPI后端 + Vue.js前端 + 管理后台
+- ✅ **用户友好**: 拖拽上传、智能检测、3步向导、Excel导出
 
 ---
 
@@ -104,21 +105,30 @@ uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
 ```
 MatMatch/
-├── backend/
-│   ├── api/              # FastAPI服务 ✅ Task 3.1-3.2完成
-│   ├── core/             # 核心算法 ✅ Phase 2完成
+├── backend/              # 后端服务 ✅ Phase 0-3完成
+│   ├── api/              # FastAPI服务（15个管理API + 6个查询API）
+│   ├── core/             # 核心算法
 │   │   ├── processors/   # UniversalMaterialProcessor（527行）
 │   │   └── calculators/  # SimilarityCalculator（503行）
-│   ├── etl/              # ETL数据管道 ✅ Phase 1完成
+│   ├── etl/              # ETL数据管道（>24,000条/分钟）
 │   ├── models/           # SQLAlchemy ORM（7张表）
-│   └── tests/            # 单元测试 + 集成测试
+│   └── tests/            # 170+测试用例（95%+通过率）
+├── frontend/             # 前端应用 ✅ Phase 4完成
+│   ├── src/
+│   │   ├── views/        # MaterialSearch（999行）、Admin（109行）
+│   │   ├── components/   # 文件上传、列配置、管理后台组件
+│   │   ├── stores/       # Pinia状态管理（material、admin、user）
+│   │   ├── api/          # API客户端（21个端点）
+│   │   └── utils/        # Excel工具、Composables
+│   └── package.json      # 294个npm包
 ├── database/             # 知识库生成工具 ✅
 ├── specs/                # 需求与设计文档
 │   ├── main/requirements.md  # 业务需求
 │   ├── main/design.md        # 技术设计
 │   └── main/tasks.md         # 项目进度 ⭐ SSOT
 └── docs/                 # 项目文档
-    ├── developer_onboarding_guide.md  # 入职指南
+    ├── developer_onboarding_guide.md  # 入职指南（v2.6）
+    ├── python_files_structure.md      # 文件结构说明
     └── configuration_guide.md         # 配置指南
 ```
 
@@ -162,8 +172,10 @@ MatMatch/
 - PostgreSQL 14+ (主数据库) + Oracle (数据源)
 - Pydantic (配置和验证)
 
-**前端（待开发）**:
-- Vue.js 3 / Vite / Element Plus / Pinia
+**前端** ✅:
+- Vue.js 3.4.21 / Vite 5.2.8 / TypeScript 5.4.0
+- Element Plus 2.6.3 / Pinia 2.1.7 / Vue Router 4.3.0
+- Axios 1.6.8 / xlsx (SheetJS)
 
 **算法**:
 - PostgreSQL pg_trgm (三元组模糊匹配)
@@ -179,8 +191,9 @@ MatMatch/
 | Phase 0 | ✅ 完成 | 2025-10-03 | 知识库构建（6规则+27,408同义词+1,594分类） |
 | Phase 1 | ✅ 完成 | 2025-10-04 | ETL管道（>24,000条/分钟，100%一致性） |
 | Phase 2 | ✅ 完成 | 2025-10-04 | 核心算法（116ms响应，100%准确率） |
-| Phase 3 | 🔄 67%完成 | 进行中 | FastAPI框架 + 批量查重API |
-| Phase 4-5 | 📅 待开发 | - | 前端界面 + 系统集成 |
+| Phase 3 | ✅ 完成 | 2025-10-08 | FastAPI完整API（21个端点，95.7%测试通过） |
+| Phase 4 | ✅ 完成 | 2025-10-09 | Vue.js前端（~8,000行，8次优化迭代） |
+| Phase 5 | 📅 待开发 | - | 系统集成测试 + 生产部署 |
 
 > 📖 **详细完成情况和验收标准**: [`specs/main/tasks.md`](specs/main/tasks.md)
 
@@ -194,7 +207,8 @@ MatMatch/
 | 核心算法 | 单元测试 + 集成测试 | 100% | 61个 |
 | API框架 | 单元测试 + 集成测试 | 100% | 45个 |
 | 批量查重API | 单元测试 | 100% | 28个 |
-| **总计** | - | **100%** | **179个** |
+| 管理后台API | 单元测试 | 95.7% | 46个 |
+| **总计** | - | **99.1%** | **225个** |
 
 ```bash
 # 运行所有测试

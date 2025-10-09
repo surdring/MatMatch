@@ -222,6 +222,51 @@ class SynonymEntry(BaseModel):
 @app.post("/api/v1/admin/synonyms", response_model=SynonymEntry)
 @app.put("/api/v1/admin/synonyms/{synonym_id}", response_model=SynonymEntry)
 @app.delete("/api/v1/admin/synonyms/{synonym_id}")
+
+# ETL管理接口
+class ETLSyncRequest(BaseModel):
+    job_type: str = Field(..., description="同步类型：full_sync 或 incremental_sync")
+    since_time: Optional[str] = Field(None, description="增量同步起始时间（可选）")
+
+class ETLSyncResponse(BaseModel):
+    job_id: int = Field(..., description="任务ID")
+    job_type: str = Field(..., description="任务类型")
+    status: str = Field(..., description="任务状态")
+    message: str = Field(..., description="提示信息")
+    estimated_duration: str = Field(..., description="预估时间")
+
+class ETLScheduleConfig(BaseModel):
+    id: Optional[int] = None
+    job_type: str = Field(..., description="同步类型：full_sync 或 incremental_sync")
+    cron_expression: str = Field(..., description="Cron表达式")
+    is_enabled: bool = Field(default=True, description="是否启用")
+    description: Optional[str] = Field(None, description="配置说明")
+    next_run_time: Optional[datetime] = Field(None, description="下次执行时间")
+
+@app.post("/api/v1/admin/etl/sync", response_model=ETLSyncResponse)
+async def trigger_etl_sync(request: ETLSyncRequest):
+    """手动触发ETL同步"""
+    pass
+
+@app.get("/api/v1/admin/etl/schedules", response_model=List[ETLScheduleConfig])
+async def get_etl_schedules():
+    """获取所有定时任务配置"""
+    pass
+
+@app.post("/api/v1/admin/etl/schedules", response_model=ETLScheduleConfig)
+async def create_etl_schedule(config: ETLScheduleConfig):
+    """创建定时任务配置"""
+    pass
+
+@app.put("/api/v1/admin/etl/schedules/{schedule_id}", response_model=ETLScheduleConfig)
+async def update_etl_schedule(schedule_id: int, config: ETLScheduleConfig):
+    """更新定时任务配置"""
+    pass
+
+@app.delete("/api/v1/admin/etl/schedules/{schedule_id}")
+async def delete_etl_schedule(schedule_id: int):
+    """删除定时任务配置"""
+    pass
 ```
 
 ### 2.2 核心业务逻辑
@@ -911,6 +956,69 @@ class ETLPipeline:
             return datetime.strptime(oracle_time_str, '%Y-%m-%d %H:%M:%S')
         except:
             return None
+    
+    async def run_incremental_sync(
+        self, 
+        since_time: Optional[str] = None,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        执行增量数据同步
+        
+        Args:
+            since_time: 增量起始时间（格式: YYYY-MM-DD HH:MM:SS）
+                       如果为None，则从上次同步时间开始
+            progress_callback: 进度回调函数
+            
+        Returns:
+            同步结果统计
+        """
+        start_time = datetime.now()
+        
+        # 如果未指定时间，从上次同步时间开始
+        if since_time is None:
+            last_job = await self.pg_session.execute(
+                select(ETLJobLog)
+                .where(ETLJobLog.status == 'completed')
+                .order_by(ETLJobLog.completed_at.desc())
+                .limit(1)
+            )
+            last_job_record = last_job.scalar_one_or_none()
+            since_time = last_job_record.completed_at.strftime('%Y-%m-%d %H:%M:%S') if last_job_record else '1970-01-01 00:00:00'
+        
+        job_log = ETLJobLog(
+            job_type='incremental_sync',
+            status='running',
+            started_at=start_time
+        )
+        await self.pg_session.add(job_log)
+        
+        try:
+            # 增量Extract → Transform → Load
+            async for batch in self._extract_materials_incremental(since_time):
+                processed = await self._process_batch(batch)
+                await self._load_batch(processed)
+                
+                if progress_callback:
+                    progress_callback(self.processed_count, self.failed_count)
+            
+            job_log.status = 'completed'
+            job_log.completed_at = datetime.now()
+            job_log.processed_records = self.processed_count
+            job_log.failed_records = self.failed_count
+            
+            return {
+                'total_processed': self.processed_count,
+                'total_failed': self.failed_count,
+                'success_rate': self.processed_count / (self.processed_count + self.failed_count) * 100 if self.processed_count + self.failed_count > 0 else 0,
+                'duration_seconds': (job_log.completed_at - start_time).total_seconds()
+            }
+            
+        except Exception as e:
+            job_log.status = 'failed'
+            job_log.error_message = str(e)
+            logger.error(f"增量ETL管道执行失败: {e}")
+            raise
 ```
 
 ### 2.3 数据库设计
@@ -1083,7 +1191,7 @@ CREATE TABLE knowledge_categories (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ETL任务执行记录表（新增）
+-- ETL任务执行记录表
 CREATE TABLE etl_job_logs (
     id SERIAL PRIMARY KEY,
     job_type VARCHAR(50) NOT NULL, -- full_sync, incremental_sync
@@ -1096,6 +1204,35 @@ CREATE TABLE etl_job_logs (
     error_message TEXT,
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP
+);
+
+-- ETL定时任务配置表（新增）
+CREATE TABLE etl_schedule_configs (
+    id SERIAL PRIMARY KEY,
+    job_type VARCHAR(50) NOT NULL, -- full_sync, incremental_sync
+    cron_expression VARCHAR(100) NOT NULL, -- Cron表达式
+    is_enabled BOOLEAN DEFAULT TRUE, -- 是否启用
+    description VARCHAR(200), -- 配置说明
+    next_run_time TIMESTAMP, -- 下次执行时间
+    last_run_time TIMESTAMP, -- 上次执行时间
+    last_run_status VARCHAR(20), -- 上次执行状态
+    created_by VARCHAR(50), -- 创建人
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT chk_job_type CHECK (job_type IN ('full_sync', 'incremental_sync'))
+);
+
+-- ETL操作审计日志表（新增）
+CREATE TABLE etl_audit_logs (
+    id SERIAL PRIMARY KEY,
+    operation_type VARCHAR(50) NOT NULL, -- manual_trigger, schedule_config, schedule_enable, schedule_disable
+    operator VARCHAR(50) NOT NULL, -- 操作人
+    operation_detail JSONB, -- 操作详情（JSON格式）
+    job_id INTEGER, -- 关联的任务ID（如果是触发操作）
+    schedule_id INTEGER, -- 关联的定时任务ID（如果是配置操作）
+    ip_address VARCHAR(50), -- 操作IP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 创建必要的索引
@@ -1124,6 +1261,8 @@ CREATE INDEX idx_categories_keywords ON material_categories USING gin (keywords)
 
 -- ETL监控索引
 CREATE INDEX idx_etl_logs_status_time ON etl_job_logs (status, started_at DESC);
+CREATE INDEX idx_etl_schedules_enabled ON etl_schedule_configs (is_enabled, next_run_time) WHERE is_enabled = TRUE;
+CREATE INDEX idx_etl_audit_logs_operator_time ON etl_audit_logs (operator, created_at DESC);
 ```
 
 ## 3. 前端设计 (Vue.js + Pinia + Element Plus)
@@ -1358,12 +1497,54 @@ export const useAdminStore = defineStore('admin', () => {
     return response.data
   }
   
+  // ETL定时任务管理（新增）
+  const etlSchedules = ref<ETLScheduleConfig[]>([])
+  
+  const loadETLSchedules = async () => {
+    isLoading.value = true
+    try {
+      const response = await adminApi.getETLSchedules()
+      etlSchedules.value = response.data
+    } finally {
+      isLoading.value = false
+    }
+  }
+  
+  const saveETLSchedule = async (schedule: ETLScheduleConfig) => {
+    if (schedule.id) {
+      await adminApi.updateETLSchedule(schedule.id, schedule)
+    } else {
+      await adminApi.createETLSchedule(schedule)
+    }
+    await loadETLSchedules()
+  }
+  
+  const deleteETLSchedule = async (scheduleId: number) => {
+    await adminApi.deleteETLSchedule(scheduleId)
+    await loadETLSchedules()
+  }
+  
+  const triggerETLSync = async (jobType: 'full_sync' | 'incremental_sync') => {
+    isLoading.value = true
+    try {
+      const response = await adminApi.triggerETLSync({ job_type: jobType })
+      currentETLJob.value = response.data
+      ElMessage.success(response.data.message)
+      // 刷新任务列表
+      await loadETLJobs()
+      return response.data
+    } finally {
+      isLoading.value = false
+    }
+  }
+  
   return {
     extractionRules,
     synonyms,
     materialCategories,
     etlJobs,
     currentETLJob,
+    etlSchedules,
     testResults,
     isLoading,
     loadExtractionRules,
@@ -1374,7 +1555,11 @@ export const useAdminStore = defineStore('admin', () => {
     batchImportSynonyms,
     loadMaterialCategories,
     loadETLJobs,
-    startETLJob
+    startETLJob,
+    loadETLSchedules,
+    saveETLSchedule,
+    deleteETLSchedule,
+    triggerETLSync
   }
 })
 ```
@@ -1397,7 +1582,10 @@ src/
 │       ├── RuleManager.vue         # 规则管理组件
 │       ├── SynonymManager.vue      # 同义词管理组件
 │       ├── RuleForm.vue           # 规则编辑表单
-│       └── SynonymForm.vue        # 同义词编辑表单
+│       ├── SynonymForm.vue        # 同义词编辑表单
+│       ├── ETLMonitor.vue         # ETL监控组件（增强）
+│       ├── ETLScheduleForm.vue    # ETL定时任务配置表单（新增）
+│       └── ETLSyncTrigger.vue     # ETL手动触发组件（新增）
 ├── views/
 │   ├── MaterialSearch.vue         # 主查重页面
 │   └── AdminPanel.vue            # 管理后台页面
@@ -1579,6 +1767,36 @@ ETL监控数据流:
 12. 实时状态更新 → 处理进度、成功率、错误信息
 13. 任务完成 → 更新最终统计和状态
 14. 监控界面 → 实时显示ETL任务状态和历史记录
+```
+
+#### 3.3.4 ETL管理增强数据流（新增）
+```
+手动触发流程:
+1. 管理员点击"全量同步"或"增量同步"按钮
+2. 前端显示确认对话框 → 包含预估时间、影响说明
+3. 用户确认 → 调用 POST /api/v1/admin/etl/sync
+4. 后端异步启动ETL任务 → 立即返回任务ID和状态
+5. 前端显示任务启动成功 → 显示任务ID和进度条
+6. 自动刷新任务列表 → 显示最新执行记录
+7. 记录操作审计日志 → 记录操作人、时间、类型
+
+定时任务配置流程:
+1. 管理员点击"定时设置"按钮 → 打开配置表单
+2. 配置Cron表达式 → 支持常用模板选择（每日2点、每周一等）
+3. 选择同步类型 → 全量/增量单选
+4. 预览下次执行时间 → 实时计算并显示
+5. 保存配置 → 调用 POST /api/v1/admin/etl/schedules
+6. 后端验证Cron表达式 → 计算下次执行时间
+7. 启动定时任务调度器 → 到达时间自动执行
+8. 记录配置审计日志 → 记录配置变更
+
+定时任务执行流程:
+9. 调度器检测到达执行时间 → 触发ETL任务
+10. 创建job_log记录 → 标记为scheduled类型
+11. 执行ETL同步 → 调用ETLPipeline
+12. 更新定时任务状态 → 记录上次执行时间和状态
+13. 计算下次执行时间 → 更新next_run_time
+14. 发送执行结果通知 → 邮件/系统通知（可选）
 ```
 
 #### 3.3.3 自动类别检测流程
