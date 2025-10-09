@@ -107,14 +107,21 @@ const handleLogin = async () => {
 
       if (success) {
         ElMessage.success('登录成功')
-        // 跳转到管理后台
-        router.push('/admin')
+        
+        // 获取重定向路径（如果有）
+        const redirect = router.currentRoute.value.query.redirect as string
+        
+        // 跳转到原本要访问的页面，或默认跳转到管理后台
+        await router.push(redirect || '/admin')
+        
+        console.log('[登录] 登录成功，跳转到:', redirect || '/admin')
       } else {
         ElMessage.error('密码错误，请重试')
         loginForm.password = ''
       }
     } catch (error) {
       ElMessage.error('登录失败，请稍后重试')
+      console.error('[登录] 登录失败:', error)
     } finally {
       loading.value = false
     }
