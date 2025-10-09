@@ -158,22 +158,28 @@ async def http_exception_handler(
         }
     )
     
-    # 根据状态码确定错误代码
-    error_codes = {
-        400: "BAD_REQUEST",
-        401: "UNAUTHORIZED",
-        403: "FORBIDDEN",
-        404: "NOT_FOUND",
-        405: "METHOD_NOT_ALLOWED",
-        500: "INTERNAL_SERVER_ERROR"
-    }
-    
-    error_code = error_codes.get(exc.status_code, f"HTTP_{exc.status_code}")
+    # 处理detail参数（可能是字符串或字典）
+    if isinstance(exc.detail, dict):
+        # 如果detail是字典（来自我们的自定义异常）
+        error_code = exc.detail.get("error_code", f"HTTP_{exc.status_code}")
+        message = exc.detail.get("message", str(exc.detail))
+    else:
+        # 如果detail是字符串
+        error_codes = {
+            400: "BAD_REQUEST",
+            401: "UNAUTHORIZED",
+            403: "FORBIDDEN",
+            404: "NOT_FOUND",
+            405: "METHOD_NOT_ALLOWED",
+            500: "INTERNAL_SERVER_ERROR"
+        }
+        error_code = error_codes.get(exc.status_code, f"HTTP_{exc.status_code}")
+        message = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
     
     return create_error_response(
         status_code=exc.status_code,
         error_code=error_code,
-        message=exc.detail,
+        message=message,
         request=request
     )
 

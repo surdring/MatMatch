@@ -29,7 +29,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/admin/login',
     name: 'admin-login',
-    component: () => import('@/views/Admin/Login.vue'),
+    component: () => import('@/views/admin/Login.vue'),
     meta: {
       title: '管理员登录'
     }
@@ -37,10 +37,10 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/admin',
     name: 'admin',
-    component: () => import('@/views/Admin/AdminPanel.vue'),
+    component: () => import('@/views/Admin.vue'),
     meta: {
       title: '管理后台',
-      requiresAuth: true
+      requiresAuth: true // ✅ 启用认证保护
     }
   },
   {
@@ -59,7 +59,7 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   // 设置页面标题
   if (to.meta.title) {
     document.title = `${to.meta.title} - ${import.meta.env.VITE_APP_TITLE}`
@@ -68,20 +68,21 @@ router.beforeEach((to, _from, next) => {
   // 权限验证
   if (to.meta.requiresAuth) {
     // 动态导入authStore以避免循环依赖
-    import('@/stores/auth').then(({ useAuthStore }) => {
-      const authStore = useAuthStore()
-      
-      if (!authStore.checkAuth()) {
-        // 未登录，重定向到登录页
-        next({
-          path: '/admin/login',
-          query: { redirect: to.fullPath } // 保存原本要访问的路径
-        })
-      } else {
-        // 已登录，允许访问
-        next()
-      }
-    })
+    const { useAuthStore } = await import('@/stores/auth')
+    const authStore = useAuthStore()
+    
+    if (!authStore.checkAuth()) {
+      // 未登录，重定向到登录页
+      console.log('[路由守卫] 未登录，重定向到登录页')
+      next({
+        path: '/admin/login',
+        query: { redirect: to.fullPath } // 保存原本要访问的路径
+      })
+    } else {
+      // 已登录，允许访问
+      console.log('[路由守卫] 已登录，允许访问')
+      next()
+    }
   } else {
     next()
   }

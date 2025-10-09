@@ -16,7 +16,8 @@ from backend.database.session import db_manager
 from backend.models.base import Base
 from backend.models.materials import (
     MaterialsMaster, MaterialCategory, MeasurementUnit,
-    ExtractionRule, Synonym, KnowledgeCategory  # Task 1.1重构 - 添加知识库表
+    ExtractionRule, Synonym, KnowledgeCategory,  # Task 1.1重构 - 添加知识库表
+    ETLJobLog  # Task 3.4 - 添加ETL任务日志表
 )
 
 # 配置日志

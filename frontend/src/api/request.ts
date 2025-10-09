@@ -31,6 +31,17 @@ service.interceptors.request.use(
       config.headers['Authorization'] = `Bearer ${token}`
     }
 
+    // [Task 4.5] 管理后台API Token认证
+    // 技术债：开发环境使用测试Token，生产环境需实现完整认证系统
+    if (config.url?.startsWith('/api/v1/admin')) {
+      // 优先使用环境变量中的测试Token
+      const adminToken = import.meta.env.VITE_ADMIN_TOKEN || 'admin_dev_token_change_in_production'
+      config.headers['Authorization'] = `Bearer ${adminToken}`
+      
+      // 可选：添加X-API-Key作为备用认证方式
+      config.headers['X-API-Key'] = adminToken
+    }
+
     // 调试信息
     if (import.meta.env.VITE_SHOW_DEBUG === 'true') {
       console.log('[Request]', config.method?.toUpperCase(), config.url, config.data || config.params)
@@ -58,6 +69,15 @@ service.interceptors.response.use(
     if (res.success === undefined) {
       // 特殊API：批量查重、统计信息等直接返回数据
       if (res.total_processed !== undefined || res.total_materials !== undefined) {
+        return {
+          success: true,
+          data: res,
+          message: 'success'
+        } as ApiResponse
+      }
+      
+      // 管理API：分页响应（包含 items、total 等字段）
+      if (res.items !== undefined || res.total !== undefined) {
         return {
           success: true,
           data: res,

@@ -10,12 +10,27 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 from sqlalchemy import (
     String, Integer, Text, DECIMAL, TIMESTAMP, Boolean,
-    Index, ForeignKey, UniqueConstraint, ARRAY
+    Index, ForeignKey, UniqueConstraint, ARRAY, JSON
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin, SyncStatusMixin
+
+# 条件类型：PostgreSQL使用JSONB和ARRAY，其他数据库使用JSON
+try:
+    from sqlalchemy import JSON as JSONType
+    from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
+    # 在运行时检测数据库类型
+    # SQLite/其他数据库将使用JSON类型
+    JSONBType = JSONB().with_variant(JSON(), "sqlite")
+    # SQLite不支持ARRAY，使用JSON存储数组
+    def ArrayType(item_type):
+        return PG_ARRAY(item_type).with_variant(JSON(), "sqlite")
+except ImportError:
+    JSONBType = JSON
+    def ArrayType(item_type):
+        return JSON
 
 
 class MaterialsMaster(Base, TimestampMixin, SyncStatusMixin):
@@ -195,7 +210,7 @@ class MaterialsMaster(Base, TimestampMixin, SyncStatusMixin):
     
     # 对应 [I.1] - JSONB类型用于存储结构化属性
     attributes: Mapped[Dict[str, Any]] = mapped_column(
-        JSONB,
+        JSONBType,
         nullable=False,
         default=dict,
         comment="提取的结构化属性（JSONB格式）"
@@ -311,7 +326,7 @@ class MaterialCategory(Base, TimestampMixin, SyncStatusMixin):
     
     # === 查重系统扩展字段 ===
     detection_keywords: Mapped[Optional[List[str]]] = mapped_column(
-        ARRAY(String),
+        ArrayType(String),
         comment="智能检测关键词数组"
     )
     
@@ -321,7 +336,7 @@ class MaterialCategory(Base, TimestampMixin, SyncStatusMixin):
     )
     
     processing_rules: Mapped[Dict[str, Any]] = mapped_column(
-        JSONB,
+        JSONBType,
         default=dict,
         comment="类别特定的处理规则配置"
     )
@@ -366,7 +381,7 @@ class KnowledgeCategory(Base, TimestampMixin):
     
     # 检测关键词（数组类型）
     keywords: Mapped[List[str]] = mapped_column(
-        ARRAY(String),
+        ArrayType(String),
         nullable=False,
         comment="检测关键词列表（基于词频统计生成）"
     )
@@ -678,6 +693,89 @@ class Synonym(Base, TimestampMixin):
         return f"<Synonym('{self.original_term}' -> '{self.standard_term}')>"
 
 
+class ETLJobLog(Base, TimestampMixin):
+    """
+    ETL任务执行日志表
+    
+    记录ETL数据同步任务的执行历史和状态
+    对应Design.md第2.3节 - etl_job_logs表定义
+    符合requirements.md AC 3.6 - ETL过程监控和统计报告
+    """
+    
+    __tablename__ = "etl_job_logs"
+    
+    # 主键
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True,
+        comment="主键ID"
+    )
+    
+    # 任务信息
+    job_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        comment="任务类型 (full_sync=全量同步, incremental_sync=增量同步)"
+    )
+    
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+        comment="任务状态 (running=运行中, completed=已完成, failed=失败)"
+    )
+    
+    # 执行统计
+    total_records: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        comment="总记录数"
+    )
+    
+    processed_records: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        comment="已处理记录数"
+    )
+    
+    failed_records: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        comment="失败记录数"
+    )
+    
+    success_rate: Mapped[Optional[float]] = mapped_column(
+        DECIMAL(5, 2),
+        comment="成功率（百分比）"
+    )
+    
+    duration_seconds: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        comment="执行时长（秒）"
+    )
+    
+    # 错误信息
+    error_message: Mapped[Optional[str]] = mapped_column(
+        Text,
+        comment="错误信息"
+    )
+    
+    # 时间字段
+    started_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP,
+        nullable=False,
+        comment="开始时间"
+    )
+    
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP,
+        comment="完成时间"
+    )
+    
+    def __repr__(self) -> str:
+        return f"<ETLJobLog(id={self.id}, type='{self.job_type}', status='{self.status}')>"
+
+
 # === 知识库表索引定义 ===
 # 对应 [T.1] - 核心功能路径测试的索引需求
 
@@ -691,3 +789,7 @@ Index('idx_extraction_rules_priority', ExtractionRule.priority.desc())
 Index('idx_synonym_lookup', Synonym.original_term, Synonym.standard_term)
 Index('idx_synonym_standard', Synonym.standard_term)
 Index('idx_synonym_category', Synonym.category)
+
+# ETL监控索引
+Index('idx_etl_logs_status', ETLJobLog.status)
+Index('idx_etl_logs_started_at', ETLJobLog.started_at.desc())
